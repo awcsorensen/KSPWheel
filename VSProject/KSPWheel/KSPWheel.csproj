@@ -62,7 +62,7 @@
       <HintPath>libs\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>D:\Games\KSP\Kerbal Space Program - RP\KSP_x64_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <HintPath>libs\UnityEngine.ImageConversionModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>libs\UnityEngine.IMGUIModule.dll</HintPath>
@@ -81,7 +81,7 @@
       <HintPath>libs\UnityEngine.UI.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.VehiclesModule">
-      <HintPath>D:\Games\KSP\Kerbal Space Program - RP\KSP_x64_Data\Managed\UnityEngine.VehiclesModule.dll</HintPath>
+      <HintPath>libs\UnityEngine.VehiclesModule.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
