@@ -124,6 +124,10 @@ namespace KSPWheel
          UI_FloatEdit(suppressEditorShipModified = true, minValue = 0.1f, maxValue = 10f, incrementLarge = 1f, incrementSmall = 0.25f, incrementSlide = 0.01f, sigFigs = 2)]
         public float scale = 1f;
 
+        [KSPField(guiName = "Width", guiActive = false, guiActiveEditor = true, isPersistant = true, guiUnits = "x"),
+         UI_FloatEdit(suppressEditorShipModified = true, minValue = 0.1f, maxValue = 10f, incrementLarge = 1f, incrementSmall = 0.25f, incrementSlide = 0.01f, sigFigs = 2)]
+        public float width = 1f;
+
         [KSPField]
         public string scalingTransform = string.Empty;
 
@@ -248,6 +252,7 @@ namespace KSPWheel
         //serialize in editor/etc, should fix cloned-parts starting with improperly offset nodes
         [SerializeField]
         private float prevScale = 1f;
+        private float prevWidth = 1f;
 
         private bool initializedWheels = false;
 
@@ -293,23 +298,33 @@ namespace KSPWheel
             Fields[nameof(wheelGroup)].guiActive = Fields[nameof(wheelGroup)].guiActiveEditor = showControls && showGUIWheelGroup;
             Fields[nameof(antiRoll)].guiActive = Fields[nameof(antiRoll)].guiActiveEditor = showControls && showGUIAntiRoll;
             Fields[nameof(scale)].guiActiveEditor = showControls && allowScaling && showGUIScale;
+            Fields[nameof(width)].guiActiveEditor = showControls && allowScaling && showGUIScale;
         }
 
         private void onScaleAdjusted(BaseField field, System.Object obj)
         {
-            setScale(scale, true);
+            setScale(scale, width, true);
             foreach (Part p in part.symmetryCounterparts)
             {
-                p.GetComponent<KSPWheelBase>().setScale(scale, true);
+                p.GetComponent<KSPWheelBase>().setScale(scale, width, true);
+            }
+        }
+        private void onWidthAdjusted(BaseField field, System.Object obj)
+        {
+            setScale(scale, width, true);
+            foreach (Part p in part.symmetryCounterparts)
+            {
+                p.GetComponent<KSPWheelBase>().setScale(scale, width, true);
             }
         }
 
-        private void setScale(float newScale, bool userInput)
+        private void setScale(float newScale, float newWidth, bool userInput)
         {
             scale = newScale;
+            width = newWidth;
             if (allowScaling)
             {
-                Vector3 scale = new Vector3(newScale, newScale, newScale);
+                Vector3 scale = new Vector3(newScale * newWidth, newScale, newScale);
                 Transform modelRoot = part.transform.FindRecursive("model");
                 if (!string.IsNullOrEmpty(scalingTransform))
                 {
@@ -333,6 +348,7 @@ namespace KSPWheel
                 scale = newScale = 1f;
             }
             prevScale = newScale;
+
             onScaleUpdated();
         }
 
@@ -449,6 +465,12 @@ namespace KSPWheel
             UI_FloatEdit ufe = (UI_FloatEdit)Fields[nameof(scale)].uiControlEditor;
             ufe.minValue = minScale;
             ufe.maxValue = maxScale;
+
+            Fields[nameof(width)].uiControlEditor.onFieldChanged = onWidthAdjusted;
+            Fields[nameof(width)].guiActiveEditor = allowScaling;
+            UI_FloatEdit ufe2 = (UI_FloatEdit)Fields[nameof(width)].uiControlEditor;
+            ufe2.minValue = minScale;
+            ufe2.maxValue = maxScale;
 
             bool frictionControlEnabled = HighLogic.CurrentGame.Parameters.CustomParams<KSPWheelSettings>().enableFrictionControl;
             Callback<BaseField, System.Object> frictionAction = delegate (BaseField a, System.Object b)
@@ -774,7 +796,7 @@ namespace KSPWheel
         {
             if (initializedScaling) { return; }
             initializedScaling = true;
-            setScale(scale, false);
+            setScale(scale, width, false);
         }
 
         private void updateSuspension()
@@ -900,14 +922,15 @@ namespace KSPWheel
             {
                 KSPWheelScaleSettings scales = HighLogic.CurrentGame.Parameters.CustomParams<KSPWheelScaleSettings>();
                 float localScale = scale * part.rescaleFactor;
-                partMassScaleFactor = Mathf.Pow(localScale, scales.partMassScalingPower);
-                partCostScaleFactor = Mathf.Pow(localScale, scales.partCostScalingPower);
-                wheelMassScaleFactor = Mathf.Pow(localScale, scales.wheelMassScalingPower);
-                wheelMaxLoadScalingFactor = Mathf.Pow(localScale, scales.wheelMaxLoadScalingPower);
+                float localWidth = width;
+                partMassScaleFactor = Mathf.Pow(localScale, scales.partMassScalingPower) * localWidth;
+                partCostScaleFactor = Mathf.Pow(localScale, scales.partCostScalingPower) * localWidth;
+                wheelMassScaleFactor = Mathf.Pow(localScale, scales.wheelMassScalingPower) * localWidth;
+                wheelMaxLoadScalingFactor = Mathf.Pow(localScale, scales.wheelMaxLoadScalingPower) * localWidth;
                 wheelMaxSpeedScalingFactor = Mathf.Pow(localScale, scales.wheelMaxSpeedScalingPower);
                 motorMaxRPMScalingFactor = Mathf.Pow(localScale, scales.motorMaxRPMScalingPower);
-                motorPowerScalingFactor = Mathf.Pow(localScale, scales.motorPowerScalingPower);
-                motorTorqueScalingFactor = Mathf.Pow(localScale, scales.motorTorqueScalingPower);
+                motorPowerScalingFactor = Mathf.Pow(localScale, scales.motorPowerScalingPower) * localWidth;
+                motorTorqueScalingFactor = Mathf.Pow(localScale, scales.motorTorqueScalingPower) * localWidth;
             }
             if (wheelData != null)
             {
