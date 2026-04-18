@@ -37,6 +37,12 @@ namespace KSPWheel
         public float maxRPM = 2500f;
 
         /// <summary>
+        /// Base efficiency of the motor
+        /// </summary>
+        [KSPField]
+        public float electricityUseMultiplier = 1f;
+
+        /// <summary>
         /// User-selectable motor output limiter
         /// </summary>
         [KSPField(guiName = "Motor Limit", guiActive = true, guiActiveEditor = true, isPersistant = true, guiUnits ="%"),
