@@ -57,6 +57,9 @@ namespace KSPWheel
         [KSPField]
         public bool allowFlip = false;
 
+        /// <summary>
+        /// Toggles state to apply changes suit side folding landing gear, strut folds expected direction, wheel inversions removed, used to distinguish between standard and side folding variants.
+        /// </summary>
         [KSPField]
         public bool sideMode = false;
 
@@ -93,51 +96,14 @@ namespace KSPWheel
         [KSPField]
         public float maxSteeringAngle = 25f;
 
-        /// <summary>
-        /// Angular rotation of the main strut during the retract animation;  this is around the horizontal (X) axis, and rotates the main strut upwards into the housing.
-        /// </summary>
         [KSPField]
-        public float mainStrutRetractedAngle = 90f;
+        public float doorAngle = 110f; //config set door opening angle to prevent wheel clipping with smooth animation.
 
-        /// <summary>
-        /// Angular rotation of the secondary strut during retract animation; this is around the vertical (Y) axis, and rotates the wheel into the housing.
-        /// </summary>
-        [KSPField]
-        public float secStrutRetractedAngle = 90f;
-
-        /// <summary>
-        /// Angular rotation of the wheel bogey during retract animation.  TODO
-        /// </summary>
         [KSPField]
         public float wheelBogeyRetractedAngle = 0f;
 
-        /// <summary>
-        /// User-configured main strut angle in editor
-        /// </summary>
-        [KSPField(guiName = "Strut Angle", guiActive = false, guiActiveEditor = true, isPersistant = true),
-         UI_FloatRange(minValue = -30f, maxValue = 30f, stepIncrement = 0.1f, suppressEditorShipModified = true)]
-        public float strutRotation = 0f;
-
-        /// <summary>
-        /// User-set secondary angle for wheel container.  Determines the axis along which the suspension operates.
-        /// </summary>
-        [KSPField(guiName = "Wheel Angle", guiActive = false, guiActiveEditor = true, isPersistant = true),
-         UI_FloatRange(minValue = 0f, maxValue = 60f, stepIncrement = 0.1f, suppressEditorShipModified = true)]
-        public float wheelRotation = 0f;
-
-        /// <summary>
-        /// User-set strut extension value.  Makes the landing leg longer or shorter.  Does not effect suspension travel range.
-        /// </summary>
-        [KSPField(guiName = "Strut Extension", guiActive = false, guiActiveEditor = true, isPersistant = true),
-         UI_FloatRange(minValue = 0f, maxValue = 1, stepIncrement = 0.05f, suppressEditorShipModified = true)]
-        public float strutExtension = 0f;
-
-        /// <summary>
-        /// Temporary testing compression value -- TODO remove once module is finished being developed
-        /// </summary>
-        [KSPField(guiName = "Comp Test", guiActive = false, guiActiveEditor = true, isPersistant = true),
-         UI_FloatRange(minValue = 0f, maxValue = 1f, stepIncrement = 0.05f, suppressEditorShipModified = true)]
-        public float compTest = 1f;
+        [KSPField]
+        public float secStrutRetractedAngle = 90f;
 
         /// <summary>
         /// Current animation state/time.  Stored independently of animation state (which is stored in the base module)
@@ -156,6 +122,12 @@ namespace KSPWheel
         /// </summary>
         [KSPField(isPersistant = true)]
         public bool isFlipped = false;
+
+        /// <summary>
+        /// sideMode specific 'isFlipped', used to flip the wheel housing model to display asymmetric side folding landing gear correctly mirrored.
+        /// </summary>
+        [KSPField(isPersistant = true)]
+        public bool flipGearState = false;
 
         [KSPField]
         public bool useResourceDeploy = false;
@@ -177,8 +149,114 @@ namespace KSPWheel
 
         #endregion ENDREGION - Standard Part Config File Fields
 
+        #region REGION - User GUI
+
+        [KSPField(isPersistant = true)]
+        public bool userValuesInitialised = false;
+
+        [KSPField]
+        public bool userAdvancedAdjustments = false; //toggle for user set Advanced Controls, set to false to disallow user adjustment advanced settings.
+
+        /// <summary>
+        /// User-selectable toggle for in-game retraction angle adjustment (set to true for housing-less landing gear models)
+        /// </summary>
+        [KSPField(guiName = "Advanced Settings", guiActive = false, guiActiveEditor = true, isPersistant = true),
+        UI_Toggle(affectSymCounterparts = UI_Scene.All, controlEnabled = true, disabledText = "Hidden", enabledText = "Shown", requireFullControl = false, suppressEditorShipModified = true, scene = UI_Scene.All)]
+        public bool showAdvanced = false; //toggle advanced settings visibility in GUI for user adjustment of retract angle, off axis angle, retain extension in stowage
+
+        /// <summary>
+        /// Angular rotation of the main strut during the retract animation;  this is around the horizontal (X) axis, and rotates the main strut upwards into the housing.
+        /// </summary>
+        [KSPField(guiName = "Retract Angle", guiActive = false, guiActiveEditor = false, isPersistant = true),
+        UI_FloatRange(minValue = 0f, maxValue = 110f, stepIncrement = 1f, suppressEditorShipModified = true)]
+        public float userMainStrutRetractedAngle = 90f;
+
+        [KSPField]
+        public float mainStrutRetractedAngle = 90f;
+
+        public bool showRetractAngle = true; //show GUI section for Retract Angle adjustment
+
+        /// <summary>
+        /// Off axis angular rotation of the main strut during the retract animation;  this is around the vertical (Z) axis relative to deployed, and rotates the main strut off forward axis for toe-in/out stowage angles.
+        /// </summary>
+        [KSPField(guiName = "Off Axis Retract Angle", guiActive = false, guiActiveEditor = false, isPersistant = true),
+        UI_FloatRange(minValue = -45f, maxValue = 45f, stepIncrement = 1f, suppressEditorShipModified = true)]
+        public float userOffAxisStrutRetractedAngle = 0f;
+
+        public float offAxisStrutRetractedAngle = 0f;
+
+        public bool showOffAxis = true; //show GUI section for Off Axis adjustment
+
+        /// <summary>
+        /// Locks user adjusted extension during retraction stage so the landing gear does not change length, for those who don't want magic retraction and prefer a more realistic animation.
+        /// </summary>
+        [KSPField(guiName = "Lock Extension", guiActive = false, guiActiveEditor = false, isPersistant = true),
+        UI_Toggle(affectSymCounterparts = UI_Scene.All, controlEnabled = true, disabledText = "Unlocked", enabledText = "Locked", requireFullControl = false, suppressEditorShipModified = true, scene = UI_Scene.All)]
+        public bool lockExtension = false; //show GUI section for Lock Extension
+
+        /// <summary>
+        /// Angular rotation of the secondary strut during retract animation; this is around the vertical (Y) axis, and rotates the wheel into the housing.
+        /// </summary>
+        [KSPField(guiName = "Secondary Retract Angle", guiActive = false, guiActiveEditor = false, isPersistant = true),
+        UI_FloatRange(minValue = -90f, maxValue = 90f, stepIncrement = 1f, suppressEditorShipModified = true)]
+        public float userSecStrutRetractedAngle = 90f;
+
+        public bool showSecRetractAngle = true; //show GUI section for Secondary Retract Angle adjustment
+
+        /// <summary>
+        /// Angular rotation of the wheel bogey during retract animation.  TODO user adjustable field
+        /// </summary>
+        [KSPField(guiName = "Bogey Retract Angle", guiActive = false, guiActiveEditor = false, isPersistant = true),
+        UI_FloatRange(minValue = -110f, maxValue = 110f, stepIncrement = 1f, suppressEditorShipModified = true)]
+        public float userWheelBogeyRetractedAngle = 0f;
+
+        public bool showBogeyRetractAngle = true; //show GUI section for Bogey Retract Angle adjustment
+
+        /// <summary>
+        /// User-configured main strut angle in editor
+        /// </summary>
+        [KSPField(guiName = "Strut Angle", guiActive = false, guiActiveEditor = true, isPersistant = true),
+         UI_FloatRange(minValue = -30f, maxValue = 30f, stepIncrement = 0.1f, suppressEditorShipModified = true)]
+        public float strutRotation = 0f;
+
+        /// <summary>
+        /// User-set secondary angle for wheel container.  Determines the axis along which the suspension operates.
+        /// </summary>
+        [KSPField(guiName = "Wheel Angle", guiActive = false, guiActiveEditor = true, isPersistant = true, guiFormat = "F1"),
+         UI_FloatRange(minValue = 0f, maxValue = 60f, stepIncrement = 0.1f, suppressEditorShipModified = true)]
+        public float wheelRotation = 0f;
+
+        /// <summary>
+        /// User-set strut extension value.  Makes the landing leg longer or shorter.  Does not effect suspension travel range.
+        /// </summary>
+        [KSPField(guiName = "Strut Extension", guiActive = false, guiActiveEditor = true, isPersistant = true),
+         UI_FloatRange(minValue = 0f, maxValue = 1, stepIncrement = 0.05f, suppressEditorShipModified = true)]
+        public float strutExtension = 0f;
+
+        /// <summary>
+        /// Temporary testing compression value -- TODO remove once module is finished being developed
+        /// </summary>
+        [KSPField(guiName = "Comp Test", guiActive = false, guiActiveEditor = true, isPersistant = true),
+         UI_FloatRange(minValue = 0f, maxValue = 1f, stepIncrement = 0.05f, suppressEditorShipModified = true)]
+        public float compTest = 1f;
+
+        #endregion ENDREGION - User GUI
+
         #region REGION - Private Working Variables
 
+        internal List<KSPWheelSubmodule> subModules = new List<KSPWheelSubmodule>();
+
+        private float roundToIncrement(float value, float increment) //round numbers to 1 decimal place to prevent ugly numbers showing up
+        {
+            float rounded = Mathf.Round(value / increment) * increment;
+
+            if (Mathf.Abs(rounded) < increment * 0.001f) //prevent -0.0 or tiny floating point remnants
+            {
+                rounded = 0f;
+            }
+
+            return rounded;
+        }
         /// <summary>
         /// Cached transforms for manipulation of the model
         /// </summary>
@@ -196,8 +274,7 @@ namespace KSPWheel
 
         private SphereCollider tempCollider;
 
-        //initialize to negative value to force drag cube updating on first update tick
-        private float prevDragUpdateState = -1f;
+        private float prevDragUpdateState = -1f; //initialize to negative value to force drag cube updating on first update tick
 
         /// <summary>
         /// Cached default orientations and locations for the above transforms
@@ -214,7 +291,6 @@ namespace KSPWheel
         private Quaternion wheelContainerDefaultRotation;
         [SerializeField]
         private Vector3 wheelContainerDefaultPosition;
-
         [SerializeField]
         private Quaternion leftDoorDefaultRotation;
         [SerializeField]
@@ -226,7 +302,7 @@ namespace KSPWheel
 
         #endregion ENDREGION - Private Working Variables
 
-        #region REGION - GUI methods
+        #region REGION - GUI Methods
 
         [KSPAction(actionGroup = KSPActionGroup.Gear, guiName = "Toggle Gear", requireFullControl = false)]
         public void deployAction(KSPActionParam param)
@@ -324,26 +400,28 @@ namespace KSPWheel
         public void flip()
         {
             if (!allowFlip) { return; }
-            isFlipped = !isFlipped;
+            isFlipped = !isFlipped; //original flip handler
+            flipGearState = !flipGearState; //new function for side mode flip
             this.symmetryUpdate(m =>
             {
                 if (m != this)
                 {
-                    m.isFlipped = !this.isFlipped;
+                    m.isFlipped = !this.isFlipped; //preserve existing opposite flipped relationship
+                    m.flipGearState = this.flipGearState; //both parts recieve same flip state
                 }
             });
         }
 
-        [KSPEvent(guiName = "Align Wheel To Ground", guiActive = false, guiActiveEditor = true)]
+        [KSPEvent(guiName = "Align Wheel to Ground", guiActive = false, guiActiveEditor = true)]
         public void alignToGround()
         {
             Vector3 target = wheelContainer.position + Vector3.up;//one unit above the transform, in world-space in the editor
             Vector3 localTarget = wheelContainer.InverseTransformPoint(target);//one unit above the transform, as seen in local space
-            //rotating around the local Z axis, so we only care about the x and y offsets
-            //erm.. feed this into Mathf.Atan2 as a slope, to get the returned angle
+                                                                               //rotating around the local Z axis, so we only care about the x and y offsets
+                                                                               //erm.. feed this into Mathf.Atan2 as a slope, to get the returned angle
             float angle = -Mathf.Atan2(localTarget.x, localTarget.y) * Mathf.Rad2Deg;
-            if (isFlipped && sideMode) { angle = -angle; }
-            wheelRotation = Mathf.Clamp(wheelRotation + angle, 0, maxWheelAngle);//clamp it to the current wheel angle limits
+            //modify align wheel range to work from minWheelAngle to maxWheelAngle, rather than limited to positive values
+            wheelRotation = Mathf.Clamp(roundToIncrement(wheelRotation + angle, 0.1f), minWheelAngle, maxWheelAngle);//clamp it to the current wheel angle limits
             this.symmetryUpdate(m =>
             {
                 m.wheelRotation = wheelRotation;
@@ -380,6 +458,67 @@ namespace KSPWheel
             return true;
         }
 
+        //NEW below
+        public void updateGUIVisibility()
+        {
+            bool advancedVisible = userAdvancedAdjustments && showAdvanced;
+
+            Fields[nameof(showAdvanced)].guiActiveEditor = userAdvancedAdjustments;
+            Fields[nameof(userMainStrutRetractedAngle)].guiActiveEditor = advancedVisible && showRetractAngle;
+            Fields[nameof(userOffAxisStrutRetractedAngle)].guiActiveEditor = advancedVisible && showOffAxis;
+            Fields[nameof(lockExtension)].guiActiveEditor = advancedVisible;
+            Fields[nameof(userSecStrutRetractedAngle)].guiActiveEditor = advancedVisible && showSecRetractAngle;
+            Fields[nameof(userWheelBogeyRetractedAngle)].guiActiveEditor = advancedVisible && showBogeyRetractAngle;
+            Events[nameof(resetRetractAngle)].guiActiveEditor = advancedVisible && showResetRetract;
+        }
+
+        public void onShowUIUpdated(BaseField field, object obj)
+        {
+            updateGUIVisibility();
+
+            this.symmetryUpdate(m =>
+            {
+                if (m != this)
+                {
+                    m.updateGUIVisibility();
+                }
+            });
+        }
+
+        //reset retraction angle to stored default config value
+        [KSPEvent(guiName = "Reset Retract Angle", guiActive = false, guiActiveEditor = false)]
+        public void resetRetractAngle()
+        {
+            userMainStrutRetractedAngle = mainStrutRetractedAngle;
+            userOffAxisStrutRetractedAngle = offAxisStrutRetractedAngle;
+            userSecStrutRetractedAngle = secStrutRetractedAngle;
+            userWheelBogeyRetractedAngle = wheelBogeyRetractedAngle;
+            // Update symmetry counterparts
+            this.symmetryUpdate(m =>
+            {
+                m.userMainStrutRetractedAngle = m.mainStrutRetractedAngle;
+                m.userOffAxisStrutRetractedAngle = m.offAxisStrutRetractedAngle;
+                m.userSecStrutRetractedAngle = m.secStrutRetractedAngle;
+                m.userWheelBogeyRetractedAngle = m.wheelBogeyRetractedAngle;
+            });
+        }
+        private bool showResetRetract = true;
+
+        //Initialise user-adjustable retraction values from the part CFG defaults.
+        //After initialisation, user values are only changed by the GUI or Reset event.
+        public void initialiseUserValues()
+        {
+            if (!userValuesInitialised)
+            {
+                userMainStrutRetractedAngle = mainStrutRetractedAngle;
+                userOffAxisStrutRetractedAngle = offAxisStrutRetractedAngle;
+                userSecStrutRetractedAngle = secStrutRetractedAngle;
+                userWheelBogeyRetractedAngle = wheelBogeyRetractedAngle;
+
+                userValuesInitialised = true;
+            }
+        }
+
         #endregion ENDREGION - GUI Methods
 
         #region REGION - Standard KSP/Unity Overrides
@@ -391,6 +530,11 @@ namespace KSPWheel
             Events[nameof(flip)].guiActiveEditor = allowFlip;
             this.updateUIFloatRangeControl(nameof(strutRotation), strutRotation, minStrutAngle, maxStrutAngle, 0.5f);
             this.updateUIFloatRangeControl(nameof(wheelRotation), wheelRotation, minWheelAngle, maxWheelAngle, 0.5f);
+            Fields[nameof(showAdvanced)].uiControlEditor.onFieldChanged = onShowUIUpdated;//connect the advanced settings toggle to its UI update handler
+
+            //set initial visibility
+            onShowUIUpdated(Fields[nameof(showAdvanced)], null);
+            initialiseUserValues();
         }
 
         internal override void postControllerSetup()
@@ -462,7 +606,7 @@ namespace KSPWheel
                 part.DragCubes.SetCubeWeight("Retracted", 1f - animationTime);
                 part.DragCubes.SetCubeWeight("Deployed", animationTime);
             }
-            if (diff > 0.1f || (prevDragUpdateState!=animationTime && (animationTime <= 0 || animationTime >= 1)))
+            if (diff > 0.1f || (prevDragUpdateState != animationTime && (animationTime <= 0 || animationTime >= 1)))
             {
                 part.SendMessage("GeometryPartModuleRebuildMeshData");
                 prevDragUpdateState = animationTime;
@@ -491,6 +635,7 @@ namespace KSPWheel
         /// </summary>
         private void locateTransforms()
         {
+            //locate required transforms
             suspensionContainer1 = part.transform.FindRecursive(suspensionContainer1Name);
             suspensionContainer2 = part.transform.FindRecursive(suspensionContainer2Name);
             suspensionTarget = part.transform.FindRecursive(suspensionTargetName);
@@ -498,11 +643,13 @@ namespace KSPWheel
             wheelContainer = part.transform.FindRecursive(wheelContainerName);
             wheelMesh = part.transform.FindRecursive(wheelMeshName);
 
+            //locate doors
             leftDoor = part.transform.FindRecursive(leftDoorName);
             rightDoor = part.transform.FindRecursive(rightDoorName);
             rearDoor = part.transform.FindRecursive(rearDoorName);
             rearDoorFlip = part.transform.FindRecursive(rearDoorFlipName);
 
+            //cache original transform states
             if (!initializedDefaultRotations)
             {
                 initializedDefaultRotations = true;
@@ -524,6 +671,28 @@ namespace KSPWheel
             float lrp = 0f;
             bool deployed = animationTime >= 1f;
 
+            float animationStart = 0.15f;
+            float animationEnd = 0.85f;
+
+            float absRetractAngle = Mathf.Abs(userMainStrutRetractedAngle);
+            float absBogeyAngle = Mathf.Abs(userWheelBogeyRetractedAngle);
+            bool bogeyHasMovement = absBogeyAngle > 0.001f;
+            bool needs90DegreeStage = absRetractAngle > 90f;
+            bool bogeyNeeds90DegreeStage = absBogeyAngle > 90f;
+            float transitionAngle = Mathf.Sign(userMainStrutRetractedAngle) * 90f;
+            float bogeyTransitionAngle = Mathf.Sign(userWheelBogeyRetractedAngle) * 90f;
+            float transitionTime = animationStart;
+            float bogeyTransitionTime = animationStart;
+
+            if (needs90DegreeStage)
+            {
+                transitionTime = Mathf.Lerp(animationStart, animationEnd, (absRetractAngle - 90f) / absRetractAngle);
+            }
+            if (bogeyNeeds90DegreeStage)
+            {
+                bogeyTransitionTime = Mathf.Lerp(animationStart, animationEnd, (absBogeyAngle - 90f) / absBogeyAngle);
+            }
+
             float mainStrutRot = 0f;
             float secStrutRot = 0f;
             float strutAngleRot = 0f;
@@ -534,6 +703,7 @@ namespace KSPWheel
             float doorFlipRot = isFlipped && allowFlip ? 180f : 0f;
             float susTargetPos = 0f;
             float bogeyAngleRot = 0f;
+            float offAxisRot = 0f;
             if (animationTime <= 0)//fully retracted, everything in retracted state
             {
                 animationTime = 0f;
@@ -542,80 +712,77 @@ namespace KSPWheel
                     changeWheelState(KSPWheelState.RETRACTED, true);
                     part.Effect(retractedEffect);
                 }
-                mainStrutRot = mainStrutRetractedAngle;
-                secStrutRot = secStrutRetractedAngle;
-                bogeyAngleRot = wheelBogeyRetractedAngle;
+                mainStrutRot = userMainStrutRetractedAngle;
+                secStrutRot = userSecStrutRetractedAngle;
+                bogeyAngleRot = userWheelBogeyRetractedAngle;
                 strutAngleRot = 0f;
                 wheelAngleRot = 0f;
                 doorLeftRot = 0f;
                 doorRightRot = 0f;
                 doorRearRot = 0f;
                 susTargetPos = 0f;
+                offAxisRot = userOffAxisStrutRetractedAngle;
             }
-            else if (animationTime < 0.15f)//open doors
+            else if (animationTime < animationStart)//open doors
             {
-                lrp = lerp(animationTime, 0, 0.15f);
-                mainStrutRot = mainStrutRetractedAngle;
-                secStrutRot = secStrutRetractedAngle;
-                bogeyAngleRot = wheelBogeyRetractedAngle;
+                lrp = lerp(animationTime, 0, animationStart);
+                mainStrutRot = userMainStrutRetractedAngle;
+                secStrutRot = userSecStrutRetractedAngle;
+                bogeyAngleRot = userWheelBogeyRetractedAngle;
                 strutAngleRot = 0f;
                 wheelAngleRot = 0f;
-                doorLeftRot = lrp * 90f;
-                doorRightRot = lrp * 90f;
-                doorRearRot = lrp * 90f;
+                doorLeftRot = lrp * doorAngle;
+                doorRightRot = lrp * doorAngle;
+                doorRearRot = lrp * doorAngle;
                 susTargetPos = 0f;
+                offAxisRot = userOffAxisStrutRetractedAngle;
             }
-            else if (animationTime < 0.4f)//main deploy animation for main strut and wheel rotation
+            else if (animationTime < animationEnd)
             {
-                lrp = lerp(animationTime, 0.15f, 0.4f);
-                mainStrutRot = (1f - lrp) * mainStrutRetractedAngle;
-                secStrutRot = secStrutRetractedAngle;
-                bogeyAngleRot = wheelBogeyRetractedAngle;
-                strutAngleRot = 0f;
-                wheelAngleRot = 0f;
-                doorLeftRot = 90f;
-                doorRightRot = 90f;
-                doorRearRot = 90f;
-                susTargetPos = 0f;
-            }
-            else if (animationTime < 0.6f)//main deploy animation for main strut and wheel rotation
-            {
-                lrp = lerp(animationTime, 0.4f, 0.6f);
-                mainStrutRot = 0;
-                secStrutRot = (1f - lrp) * secStrutRetractedAngle;
-                bogeyAngleRot = (1f - lrp) * wheelBogeyRetractedAngle;
-                strutAngleRot = 0f;
-                wheelAngleRot = 0f;
-                doorLeftRot = 90f;
-                doorRightRot = 90f;
-                doorRearRot = 90f;
-                susTargetPos = 0f;
-            }
-            else if (animationTime < 0.85f)//lerp into user-configured positions
-            {
-                lrp = lerp(animationTime, 0.6f, 0.85f);
-                mainStrutRot = 0f;
-                secStrutRot = 0f;
-                bogeyAngleRot = 0f;
-                strutAngleRot = strutRotation * lrp;
-                wheelAngleRot = wheelRotation * lrp;
-                doorLeftRot = (1 - lrp) * 90f;
-                doorRightRot = (1 - lrp) * 90f;
-                doorRearRot = 90f + (allowFlip ? lrp * Mathf.Max(0, -strutRotation) : 0);
-                susTargetPos = lrp;
+                // Main strut and bogey each use their own transition timing
+                mainStrutRot = getStagedRetractRotation(animationTime, userMainStrutRetractedAngle, transitionAngle, transitionTime, needs90DegreeStage, animationStart, animationEnd);
+
+                bogeyAngleRot = bogeyHasMovement ? getStagedRetractRotation(animationTime, userWheelBogeyRetractedAngle, bogeyTransitionAngle, bogeyTransitionTime, bogeyNeeds90DegreeStage, animationStart, animationEnd) : 0f;
+
+                // Keep other adjustments inactive during main strut's >90° transition
+                if (needs90DegreeStage && animationTime < transitionTime)
+                {
+                    secStrutRot = userSecStrutRetractedAngle;
+                    strutAngleRot = 0f;
+                    wheelAngleRot = 0f;
+                    susTargetPos = 0f;
+                    offAxisRot = userOffAxisStrutRetractedAngle;
+                }
+                else
+                {
+                    float mainStartTime = needs90DegreeStage ? transitionTime : animationStart;
+
+                    lrp = lerp(animationTime, mainStartTime, animationEnd);
+
+                    secStrutRot = (1f - lrp) * userSecStrutRetractedAngle;
+                    strutAngleRot = strutRotation * lrp;
+                    wheelAngleRot = wheelRotation * lrp;
+                    susTargetPos = lrp;
+                    offAxisRot = (1f - lrp) * userOffAxisStrutRetractedAngle;
+                }
+
+                doorLeftRot = doorAngle;
+                doorRightRot = doorAngle;
+                doorRearRot = doorAngle + (allowFlip ? Mathf.Max(0, -strutRotation) : 0f);
             }
             else if (animationTime < 1.0f)//last stage before fully deployed. close back end doors, lerp into user-configured positions
             {
-                lrp = lerp(animationTime, 0.85f, 1f);
+                lrp = lerp(animationTime, animationEnd, 1f);
                 mainStrutRot = 0f;
                 secStrutRot = 0f;
                 bogeyAngleRot = 0f;
                 strutAngleRot = strutRotation;
                 wheelAngleRot = wheelRotation;
-                doorLeftRot = 0f;
-                doorRightRot = 0f;
-                doorRearRot = 90f + (allowFlip ? Mathf.Max(0, -strutRotation) : 0);
+                doorLeftRot = (1 - lrp) * doorAngle;
+                doorRightRot = (1 - lrp) * doorAngle;
+                doorRearRot = doorAngle + (allowFlip ? Mathf.Max(0, -strutRotation) : 0);
                 susTargetPos = 1f;
+                offAxisRot = 0f;
             }
             else if (animationTime >= 1.0f)//fully deployed
             {
@@ -632,19 +799,22 @@ namespace KSPWheel
                 wheelAngleRot = wheelRotation;
                 doorLeftRot = 0f;
                 doorRightRot = 0f;
-                doorRearRot = 90f + (allowFlip ? Mathf.Max(0, -strutRotation) : 0);
+                doorRearRot = doorAngle + (allowFlip ? Mathf.Max(0, -strutRotation) : 0);
                 susTargetPos = 1f;
+                offAxisRot = 0f;
             }
 
-            if (isFlipped && !sideMode)
+            if (isFlipped)
             {
-                strutAngleRot = -strutAngleRot;
+                offAxisRot = -offAxisRot; //toe direction mirrors for both standard and sidemode
                 secStrutRot = -secStrutRot;
                 bogeyAngleRot = -bogeyAngleRot;
             }
-            if (sideMode && isFlipped)
+            if (isFlipped && !sideMode)
             {
-                wheelAngleRot = -wheelAngleRot;
+                strutAngleRot = -strutAngleRot;
+                //secStrutRot = -secStrutRot;
+                //bogeyAngleRot = -bogeyAngleRot;
             }
 
             leftDoor.localRotation = leftDoorDefaultRotation;
@@ -658,26 +828,32 @@ namespace KSPWheel
             rearDoorFlip.Rotate(0, 0, doorFlipRot, Space.Self);
 
             suspensionContainer1.localRotation = sc1DefaultRotation;//user strut angle setting
+            suspensionContainer1.Rotate(0, 0, offAxisRot, Space.Self);//user off axis retract strut angle setting
             wheelContainer.localRotation = wheelContainerDefaultRotation;//user wheel angle setting
             wheelContainer.localPosition = wheelContainerDefaultPosition;//user strut extension setting
-            wheelContainer.transform.position -= wheelContainer.up * controller.scale * strutExtension * maxExtension * susTargetPos;
+            float extensionAnimationPosition = lockExtension && userAdvancedAdjustments ? 1f : susTargetPos;//extension behaviour: unlocked = extension follows normal animation, locked = user selected extension remains fully applied
+            wheelContainer.transform.position -= wheelContainer.up * controller.scale * strutExtension * maxExtension * extensionAnimationPosition;//apply user selected strut extension
             suspensionContainer1.Rotate(strutAngleRot, 0, 0, Space.Self);//user strut angle setting
-            if (isFlipped)
+
+            bool flipWheelHousing = (!sideMode && isFlipped) || (sideMode && flipGearState);
+            if (flipWheelHousing)
             {
                 wheelContainer.Rotate(0, 180, 0, Space.Self);
             }
-            wheelContainer.Rotate(0, 0, wheelAngleRot, Space.Self);
+
+            //change sequence of rotation tranforms to stop inversion of targets
             wheelContainer.Rotate(0, secStrutRot + wheel.steeringAngle, 0, Space.Self);
+            wheelContainer.Rotate(0, 0, wheelAngleRot, Space.Self);
             Vector3 p2 = wheelContainer.position - wheelContainer.up * (HighLogic.LoadedSceneIsFlight ? (wheel.length - wheel.compressionDistance) : (wheel.length * (1 - compTest)));
             suspensionTarget.position = Vector3.Lerp(wheelContainer.position, p2, susTargetPos);
             suspensionTarget.rotation = wheelContainer.rotation;
-            suspensionTarget.RotateAround(suspensionContainer1.position, sideMode? suspensionContainer1.right: suspensionContainer1.up, mainStrutRot);
+            suspensionTarget.RotateAround(suspensionContainer1.position, sideMode ? suspensionContainer1.right : suspensionContainer1.up, mainStrutRot);
             suspensionTarget.Rotate(-bogeyAngleRot, 0, 0, Space.Self);
             suspensionRotator.rotation = suspensionTarget.rotation;
             suspensionRotator.Rotate(bogeyAngleRot, 0, 0, Space.Self);
             suspensionRotator.LookAtLocked(suspensionContainer1.position, Vector3.up, Vector3.forward);
-
             suspensionContainer2.localRotation = sc2DefaultRotation;
+
             if (susTargetPos > 0)
             {
                 suspensionContainer2.LookAtLocked(suspensionTarget.position, Vector3.back, Vector3.right);
@@ -691,7 +867,25 @@ namespace KSPWheel
             return p <= 0 ? 0 : t / p;
         }
 
+        private float getStagedRetractRotation(float animationTime, float retractAngle, float transitionAngle, float transitionTime, bool needs90DegreeStage, float animationStart, float animationEnd)
+
+        {
+            if (needs90DegreeStage && animationTime < transitionTime)
+            {
+                float t = lerp(animationTime, animationStart, transitionTime);
+                return Mathf.Lerp(retractAngle, transitionAngle, t);
+            }
+
+            float startTime = needs90DegreeStage ? transitionTime : animationStart;
+            float t2 = lerp(animationTime, startTime, animationEnd);
+
+            float startAngle = needs90DegreeStage ? transitionAngle : retractAngle;
+
+            return Mathf.Lerp(startAngle, 0f, t2);
+        }
+
         #endregion ENDREGION - Custom Update Methods
 
     }
+
 }
