@@ -1,14 +1,14 @@
 {
 	"NAME":"KSPWheel",
-	"URL":"http://ksp-avc.cybutek.net/version.php?id=429",
-	"DOWNLOAD":"https://github.com/shadowmage45/KSPWheel/releases/tag/0.16.14.33",
-	"CHANGE_LOG_URL":"https://github.com/shadowmage45/KSPWheel/releases/tag/0.16.14.33",
+	"URL":"http://ksp-avc.cybutek.net/version.php?id=684",
+	"DOWNLOAD":"https://github.com/awcsorensen/KSPWheel/releases/tag/0.17.0.0",
+	"CHANGE_LOG_URL":"https://github.com/awcsorensen/KSPWheel/releases/tag/0.17.0.0",
 	"VERSION":
 	{
 		"MAJOR":0,
-		"MINOR":16,
-		"PATCH":14,
-		"BUILD":33
+		"MINOR":17,
+		"PATCH":0,
+		"BUILD":0
 	},
 	"KSP_VERSION":
 	{
