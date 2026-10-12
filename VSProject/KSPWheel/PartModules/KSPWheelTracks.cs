@@ -8,9 +8,8 @@ namespace KSPWheel
 {
     public class KSPWheelTracks : KSPWheelMotor
     {
-
-        [KSPField(guiName = "Track Length Adjust", guiActive =false, guiActiveEditor = false)
-         ,UI_FloatEdit(minValue = -100f, maxValue = 100f, incrementLarge = 5f, incrementSmall = 1f, incrementSlide = 0.1f)]
+        [KSPField(guiName = "Track Texture Length", guiActive = true, guiActiveEditor = true, isPersistant = true, guiUnits = "m"),
+         UI_FloatEdit(minValue = -20f, maxValue = 20f, incrementLarge = 0.25f, incrementSmall = 0.01f, incrementSlide = 0.01f, sigFigs = 3, affectSymCounterparts = UI_Scene.Editor)]
         public float trackLength = 10f;
 
         [KSPField]
@@ -20,10 +19,10 @@ namespace KSPWheel
         public int smrIndex = 0;
 
         [KSPField(guiName = "Invert Track Surface Direction", guiActive = false, guiActiveEditor = true, isPersistant = true),
-         UI_Toggle(scene = UI_Scene.Editor, controlEnabled = true, requireFullControl = false, disabledText = "Standard", enabledText = "Inverted", affectSymCounterparts = UI_Scene.None, suppressEditorShipModified = true)]
+         UI_Toggle(scene = UI_Scene.All, controlEnabled = true, requireFullControl = false, disabledText = "Standard", enabledText = "Inverted", affectSymCounterparts = UI_Scene.Editor, suppressEditorShipModified = true)]
         public bool invertTrackTexture = false;
 
-        [KSPField(guiName = "Display Fwd Rotation", guiActive = false, guiActiveEditor = true, isPersistant = false),
+        [KSPField(guiName = "Display Track Fwd Rotation", guiActive = false, guiActiveEditor = true, isPersistant = false),
          UI_Toggle(enabledText = "True", disabledText = "False", suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public bool editorRotation = false;
 
@@ -32,13 +31,17 @@ namespace KSPWheel
         private SkinnedMeshRenderer smr;
         private Vector2 offset = Vector2.zero;
         private Material mat;
-        private float trackVelocity = 0f;//velocity of the track surface, in m/s
-
         public override void OnStart(StartState state)
         {
             base.OnStart(state);
-            Fields[nameof(invertTrackTexture)].uiControlEditor.onFieldChanged = invertTrackTextureClicked;
-            Fields[nameof(trackLength)].guiActiveEditor = HighLogic.CurrentGame.Parameters.CustomParams<KSPWheelSettings>().debugMode;
+            Fields[nameof(trackLength)].uiControlEditor.onFieldChanged = Fields[nameof(trackLength)].uiControlFlight.onFieldChanged = trackLengthChanged;
+            Fields[nameof(invertTrackTexture)].uiControlEditor.onFieldChanged = Fields[nameof(invertTrackTexture)].uiControlFlight.onFieldChanged = invertTrackTextureClicked;
+            if (HighLogic.LoadedSceneIsEditor && part.isClone && invertMirror && part.symmetryCounterparts != null && part.symmetryCounterparts.Count == 1)
+            {
+                int moduleIndex = part.Modules.IndexOf(this);
+                KSPWheelTracks counterpart = part.symmetryCounterparts[0].Modules[moduleIndex] as KSPWheelTracks;
+                if (counterpart != null) { invertTrackTexture = !counterpart.invertTrackTexture; }
+            }
         }
 
         internal override void postWheelCreated()
@@ -54,9 +57,7 @@ namespace KSPWheel
             base.preWheelFrameUpdate();
             if (mat != null && controller.wheelState==KSPWheelState.DEPLOYED)
             {
-                offset.x += (-trackVelocity * Time.deltaTime * trackDir) / (trackLength * part.rescaleFactor * controller.scale) * (invertTrackTexture ? -1 : 1);
-                mat.SetTextureOffset("_MainTex", offset);
-                mat.SetTextureOffset("_BumpMap", offset);
+                advanceTrackTexture(wheel.linearVelocity * Time.deltaTime);
             }
         }
 
@@ -66,10 +67,7 @@ namespace KSPWheel
             {
                 if (editorRotation && mat != null && controller.wheelState == KSPWheelState.DEPLOYED)
                 {
-                    float trackVelocity = invertMotor? -1 : 1;
-                    offset.x += (-trackVelocity * Time.deltaTime * trackDir) / (trackLength * part.rescaleFactor * controller.scale) * (invertTrackTexture ? -1 : 1);
-                    mat.SetTextureOffset("_MainTex", offset);
-                    mat.SetTextureOffset("_BumpMap", offset);
+                    advanceTrackTexture((invertMotor ? -1f : 1f) * Time.deltaTime);
                 }
             }
         }
@@ -122,12 +120,59 @@ namespace KSPWheel
                 wheel.brakeTorque = shares[i] * totalBrakeTorque;
                 wheel.angularVelocity = shares[i] * totalSystemTorque / wheel.momentOfInertia;
             }
-            trackVelocity = this.wheel.linearVelocity;
+        }
+
+        private void advanceTrackTexture(float distance)
+        {
+            if (trackLength == 0f) { return; }
+            float scaledLength = trackLength * part.rescaleFactor * controller.scale;
+            if (scaledLength == 0f) { return; }
+
+            offset.x = Mathf.Repeat(offset.x + distance * trackDir * (invertTrackTexture ? -1f : 1f) / scaledLength, 1f);
+            mat.SetTextureOffset("_MainTex", offset);
+            mat.SetTextureOffset("_BumpMap", offset);
+        }
+
+        private void trackLengthChanged(BaseField a, System.Object b)
+        {
+            if (HighLogic.LoadedSceneIsEditor)
+            {
+                this.symmetryUpdate(m =>
+                {
+                    m.trackLength = trackLength;
+                    m.updateUIFloatEditControl(nameof(m.trackLength), m.trackLength);
+                });
+            }
+            else if (HighLogic.LoadedSceneIsFlight)
+            {
+                this.wheelGroupUpdate(int.Parse(controller.wheelGroup), m =>
+                {
+                    m.trackLength = trackLength;
+                    m.updateUIFloatEditControl(nameof(m.trackLength), m.trackLength);
+                });
+            }
         }
 
         private void invertTrackTextureClicked(BaseField a, System.Object b)
         {
-            updateTrackTextureScale();
+            if (HighLogic.LoadedSceneIsEditor)
+            {
+                this.symmetryUpdate(m =>
+                {
+                    // Mirror the motor inversion: the opposite side needs opposite UV orientation.
+                    m.invertTrackTexture = m == this || !invertMirror || part.symmetryCounterparts.Count != 1
+                        ? invertTrackTexture : !invertTrackTexture;
+                    m.updateTrackTextureScale();
+                });
+            }
+            else if (HighLogic.LoadedSceneIsFlight)
+            {
+                this.wheelGroupUpdate(int.Parse(controller.wheelGroup), m =>
+                {
+                    m.invertTrackTexture = invertTrackTexture;
+                    m.updateTrackTextureScale();
+                });
+            }
         }
 
         private void updateTrackTextureScale()

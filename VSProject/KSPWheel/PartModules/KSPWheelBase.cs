@@ -73,17 +73,17 @@ namespace KSPWheel
         public bool showControls = false; 
 
         [KSPField(guiName = "Spring Rating", guiActive = true, guiActiveEditor = true, isPersistant = true),
-         UI_FloatRange(minValue = 0.2f, maxValue = 0.8f, stepIncrement = 0.05f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
+         UI_FloatRange(minValue = 0.2f, maxValue = 2f, stepIncrement = 0.05f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float springRating = 0.5f;
 
         [KSPField]
         public float minSpringRating = 0.2f;
 
         [KSPField]
-        public float maxSpringRating = 0.8f;
+        public float maxSpringRating = 2f;
 
         [KSPField(guiName = "Damp Ratio", guiActive = true, guiActiveEditor = true, isPersistant = true),
-        UI_FloatRange(minValue = 0.35f, maxValue = 1, stepIncrement = 0.025f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
+        UI_FloatRange(minValue = 0.35f, maxValue = 1f, stepIncrement = 0.025f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float dampRatio = 0.65f;
 
         [KSPField(guiName = "Wheel Group", guiActive = true, guiActiveEditor = true, isPersistant = true),
@@ -93,6 +93,9 @@ namespace KSPWheel
         [KSPField]
         public float minDampRatio = 0.25f;
 
+        /// <summary>
+        /// Damp ratios above 1 with high spring rate causes issues with bouncing.
+        /// </summary>
         [KSPField]
         public float maxDampRatio = 1f;
 
@@ -104,6 +107,9 @@ namespace KSPWheel
 
         [KSPField]
         public bool allowScaling = true;
+
+        [KSPField]
+        public bool allowWidthScaling = true;
 
         [KSPField]
         public float minScale = 0.1f;
@@ -289,10 +295,9 @@ namespace KSPWheel
             Fields[nameof(wheelGroup)].guiActive = Fields[nameof(wheelGroup)].guiActiveEditor = showControls && showGUIWheelGroup;
             Fields[nameof(antiRoll)].guiActive = Fields[nameof(antiRoll)].guiActiveEditor = showControls && showGUIAntiRoll;
             Fields[nameof(scale)].guiActiveEditor = showControls && allowScaling && showGUIScale;
-            Fields[nameof(width)].guiActiveEditor = showControls && allowScaling && showGUIScale;
+            Fields[nameof(width)].guiActiveEditor = showControls && allowWidthScaling && showGUIScale;
         }        
         
-        //new
         public void onShowControlsUpdated(BaseField field, object obj)
         {
             onShowUIUpdated(field, obj);
@@ -438,7 +443,6 @@ namespace KSPWheel
             }
 
             field = Fields[nameof(showControls)];
-            //field.uiControlEditor.onFieldChanged = field.uiControlFlight.onFieldChanged = onShowUIUpdated;
             field.uiControlEditor.onFieldChanged = field.uiControlFlight.onFieldChanged = onShowControlsUpdated;
 
             Fields[nameof(springRating)].uiControlFlight.onFieldChanged = onLoadUpdated;
@@ -448,6 +452,12 @@ namespace KSPWheel
             UI_FloatEdit ufe = (UI_FloatEdit)Fields[nameof(scale)].uiControlEditor;
             ufe.minValue = minScale;
             ufe.maxValue = maxScale;
+
+            Fields[nameof(width)].uiControlEditor.onFieldChanged = onWidthAdjusted;
+            Fields[nameof(width)].guiActiveEditor = allowScaling;
+            UI_FloatEdit ufe2 = (UI_FloatEdit)Fields[nameof(width)].uiControlEditor;
+            ufe2.minValue = minScale;
+            ufe2.maxValue = maxScale;
 
             bool frictionControlEnabled = HighLogic.CurrentGame.Parameters.CustomParams<KSPWheelSettings>().enableFrictionControl;
             Callback<BaseField, System.Object> frictionAction = delegate (BaseField a, System.Object b)

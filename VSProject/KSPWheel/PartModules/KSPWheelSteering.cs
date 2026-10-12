@@ -16,7 +16,8 @@ namespace KSPWheel
         /// <summary>
         /// Maximum deflection angle of the steering transform, measured from its default state (rotation = 0,0,0)
         /// </summary>
-        [KSPField]
+        [KSPField(guiName = "Max Steering Angle", guiActive = true, guiActiveEditor = true, isPersistant = true, guiUnits = " deg"),
+         UI_FloatEdit(minValue = 0f, maxValue = 180f, incrementLarge = 10f, incrementSmall = 1f, incrementSlide = 1f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float maxSteeringAngle = 0f;
 
         /// <summary>
@@ -27,24 +28,36 @@ namespace KSPWheel
         public bool steeringLocked;
 
         /// <summary>
-        /// If true, steering will be inverted for this wheel.  Toggleable in editor and flight.  Persistent.
+        /// If true, steering will be inverted for this wheel.  Toggleable in editor and flight.  Persistant.
         /// </summary>
         [KSPField(guiName = "Invert Steering", guiActive = true, guiActiveEditor = true, isPersistant = true),
          UI_Toggle(enabledText = "Inverted", disabledText = "Normal", suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public bool invertSteering = false;
 
+        /// <summary>
+        /// Low speed steering limit 0-100% of maxSteeringAngle
+        /// </summary>
         [KSPField(guiName = "Steering Limit Low", guiActive = true, guiActiveEditor = true, isPersistant = true),
          UI_FloatRange(minValue = 0, maxValue = 1, stepIncrement = 0.01f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float steeringLimit = 1f;
 
+        /// <summary>
+        /// High speed steering limit 0-100% of maxSteeringAngle
+        /// </summary>
         [KSPField(guiName = "Steering Limit High", guiActive = true, guiActiveEditor = true, isPersistant = true),
          UI_FloatRange(minValue = 0, maxValue = 1, stepIncrement = 0.01f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float steeringLimitHigh = 1f;
 
+        /// <summary>
+        /// Changes the rate of steering from 1 = instant angle transform, ~0.05 = steering turns at realistic rate 
+        /// </summary>
         [KSPField(guiName = "Steering Response", guiActive = true, guiActiveEditor = true, isPersistant = true),
          UI_FloatRange(minValue = 0, maxValue = 1, stepIncrement = 0.01f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float steeringResponse = 1f;
 
+        /// <summary>
+        /// Pseudo Ackermann steering geometry. Mirrored symmetry partners use the opposite bias.
+        /// </summary>
         [KSPField(guiName = "Steering Bias", guiActive = true, guiActiveEditor = true, isPersistant = true),
          UI_FloatRange(minValue = -1, maxValue = 1, stepIncrement = 0.025f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float steeringBias = 0f;
@@ -54,6 +67,11 @@ namespace KSPWheel
         /// </summary>
         [KSPField]
         public bool updateWheelSteering = true;
+
+        /// <summary>
+        /// The ALG disables steering for a user-set wheel angle without changing this module's configured maximum.
+        /// </summary>
+        internal bool steeringDisabledByAdjustableGear;
         
         /// <summary>
         /// The local axis of the steering transform to rotate around.  Defaults to 0, 1, 0 -- rotate around y+ axis, with z+ facing forward.
@@ -70,6 +88,13 @@ namespace KSPWheel
         [KSPField]
         public float steeringCurveMaxSpeed;
 
+        /// <summary>
+        /// Reduce the strength of the config set or default steering curve which acts as an assist at high speeds, 100% = full steering curve assist, 0% = no steering curve assist
+        /// </summary>
+        [KSPField(guiName = "Steering Curve Strength", guiActive = true, guiActiveEditor = true, isPersistant = true, guiFormat = "P0"),
+        UI_FloatRange(minValue = 0f, maxValue = 1f, stepIncrement = 0.05f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
+        public float steeringCurveStrength = 1f;
+
         [KSPField]
         public bool showGUISteerLock = true;
         [KSPField]
@@ -77,9 +102,13 @@ namespace KSPWheel
         [KSPField]
         public bool showGUISteerBias = true;
         [KSPField]
+        public bool showGUIMaxSteeringAngle = true;
+        [KSPField]
         public bool showGUISteerResponse = true;
         [KSPField]
         public bool showGUISteerLimit = true;
+        [KSPField]
+        public bool showGUISteerCurve = true;
 
         private Transform steeringTransform;
         private Quaternion defaultRotation;
@@ -113,10 +142,77 @@ namespace KSPWheel
 
         internal void onSteeringBiasUpdated(BaseField field, System.Object obj)
         {
+            if (HighLogic.LoadedSceneIsEditor)
+            {
+                bool mirroredPair = part.symmetryCounterparts != null && part.symmetryCounterparts.Count == 1;
+                this.symmetryUpdate(m =>
+                {
+                    m.steeringBias = mirroredPair && m != this ? -steeringBias : steeringBias;
+                    m.updateUIFloatRangeControl(nameof(steeringBias), m.steeringBias, -1f, 1f, 0.025f);
+                });
+            }
+            else if (HighLogic.LoadedSceneIsFlight)
+            {
+                // Process each pair once. Start with this module so its chosen sign wins.
+                List<KSPWheelSteering> group = new List<KSPWheelSteering> { this };
+                this.wheelGroupUpdate(int.Parse(controller.wheelGroup), m =>
+                {
+                    if (m != this && !group.Contains(m)) { group.Add(m); }
+                });
+                HashSet<KSPWheelSteering> updated = new HashSet<KSPWheelSteering>();
+                foreach (KSPWheelSteering m in group)
+                {
+                    if (!updated.Add(m)) { continue; }
+                    m.steeringBias = steeringBias;
+                    m.updateUIFloatRangeControl(nameof(steeringBias), m.steeringBias, -1f, 1f, 0.025f);
+                    KSPWheelSteering mirror = m.getMirrorCounterpart();
+                    if (mirror != null && updated.Add(mirror))
+                    {
+                        mirror.steeringBias = -steeringBias;
+                        mirror.updateUIFloatRangeControl(nameof(steeringBias), mirror.steeringBias, -1f, 1f, 0.025f);
+                    }
+                }
+            }
+        }
+
+        private KSPWheelSteering getMirrorCounterpart()
+        {
+            if (part.symmetryCounterparts == null || part.symmetryCounterparts.Count != 1) { return null; }
+            int moduleIndex = part.Modules.IndexOf(this);
+            Part mirrorPart = part.symmetryCounterparts[0];
+            return moduleIndex >= 0 && moduleIndex < mirrorPart.Modules.Count
+                ? mirrorPart.Modules[moduleIndex] as KSPWheelSteering : null;
+        }
+
+        internal void onMaxSteeringAngleUpdated(BaseField field, System.Object obj)
+        {
+            if (HighLogic.LoadedSceneIsEditor)
+            {
+                this.symmetryUpdate(m =>
+                {
+                    m.maxSteeringAngle = maxSteeringAngle;
+                    m.updateUIFloatEditControl(nameof(maxSteeringAngle), maxSteeringAngle);
+                });
+            }
+            else if (HighLogic.LoadedSceneIsFlight)
+            {
+                this.wheelGroupUpdate(int.Parse(controller.wheelGroup), m =>
+                {
+                    m.symmetryUpdate(s =>
+                    {
+                        s.maxSteeringAngle = maxSteeringAngle;
+                        s.updateUIFloatEditControl(nameof(maxSteeringAngle), maxSteeringAngle);
+                    });
+                });
+            }
+        }
+
+        internal void onSteeringCurveStrengthUpdated(BaseField field, System.Object obj)
+        {
             this.wheelGroupUpdate(int.Parse(controller.wheelGroup), m =>
             {
-                m.steeringBias = steeringBias;
-                m.updateUIFloatEditControl(nameof(m.steeringBias), m.steeringBias);
+                m.steeringCurveStrength = steeringCurveStrength;
+                //m.updateUIFloatEditControl(nameof(m.steeringCurveStrength), m.steeringCurveStrength);
             });
         }
 
@@ -135,12 +231,19 @@ namespace KSPWheel
         public override void OnStart(StartState state)
         {
             base.OnStart(state);
+            Fields[nameof(maxSteeringAngle)].uiControlEditor.onFieldChanged = Fields[nameof(maxSteeringAngle)].uiControlFlight.onFieldChanged = onMaxSteeringAngleUpdated;
+            Fields[nameof(steeringBias)].uiControlEditor.onFieldChanged = Fields[nameof(steeringBias)].uiControlFlight.onFieldChanged = onSteeringBiasUpdated;
             Fields[nameof(steeringLocked)].uiControlFlight.onFieldChanged = onSteeringLocked;
             Fields[nameof(invertSteering)].uiControlFlight.onFieldChanged = onSteeringInverted;
             Fields[nameof(steeringLimit)].uiControlFlight.onFieldChanged = onSteeringLimitUpdated;
             Fields[nameof(steeringLimitHigh)].uiControlFlight.onFieldChanged = onSteeringLimitUpdated;
             Fields[nameof(steeringResponse)].uiControlFlight.onFieldChanged = onSteeringLimitUpdated;
-            Fields[nameof(steeringBias)].uiControlFlight.onFieldChanged = onSteeringBiasUpdated;
+            Fields[nameof(steeringCurveStrength)].uiControlFlight.onFieldChanged = onSteeringCurveStrengthUpdated;
+            if (HighLogic.LoadedSceneIsEditor && part.isClone)
+            {
+                KSPWheelSteering mirror = getMirrorCounterpart();
+                if (mirror != null) { steeringBias = -mirror.steeringBias; }
+            }
         }
 
         internal override string getModuleInfo()
@@ -157,6 +260,8 @@ namespace KSPWheel
             Fields[nameof(steeringLimitHigh)].guiActive = Fields[nameof(steeringLimitHigh)].guiActiveEditor = show && showGUISteerLimit;
             Fields[nameof(steeringResponse)].guiActive = Fields[nameof(steeringResponse)].guiActiveEditor = show && showGUISteerResponse;
             Fields[nameof(steeringBias)].guiActive = Fields[nameof(steeringBias)].guiActiveEditor = show && showGUISteerBias;
+            Fields[nameof(maxSteeringAngle)].guiActive = Fields[nameof(maxSteeringAngle)].guiActiveEditor = show && showGUIMaxSteeringAngle;
+            Fields[nameof(steeringCurveStrength)].guiActive = Fields[nameof(steeringCurveStrength)].guiActiveEditor = show && showGUISteerCurve;
         }
 
         internal override void postControllerSetup()
@@ -207,11 +312,13 @@ namespace KSPWheel
             float limit = ((1 - perc) * steeringLimit) + (perc * steeringLimitHigh);
             if (useSteeringCurve)
             {
-                limit *= steeringCurve.Evaluate(perc);
+                float curveLimit = steeringCurve.Evaluate(perc);
+                curveLimit = Mathf.Lerp(1f, curveLimit, steeringCurveStrength);
+                limit *= curveLimit;
             }
             if (updateWheelSteering)
             {
-                wheel.steeringAngle = maxSteeringAngle * rotInput * limit;
+                wheel.steeringAngle = steeringDisabledByAdjustableGear ? 0f : maxSteeringAngle * rotInput * limit;
             }
         }
 

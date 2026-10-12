@@ -154,11 +154,22 @@ namespace KSPWheel
         private static float rpmToRad = 0.104719755f;
         private static float radToRPM = 1 / 0.104719755f;
 
+        // Trailing-arm ALG keeps the paired housings and collider headings aligned.
+        private bool useSameMotorSymmetry
+        {
+            get
+            {
+                KSPWheelAdjustableGear gear = Array.Find(part.GetComponents<KSPWheelAdjustableGear>(),
+                    m => m.baseModuleIndex == baseModuleIndex && m.wheelIndex == wheelIndex);
+                return gear != null && gear.trailingArmMode;
+            }
+        }
+
         public void onMotorInvert(BaseField field, System.Object obj)
         {
             if (HighLogic.LoadedSceneIsEditor && part.symmetryCounterparts.Count == 1)
             {
-                part.symmetryCounterparts[0].GetComponent<KSPWheelMotor>().invertMotor = !invertMotor;
+                part.symmetryCounterparts[0].GetComponent<KSPWheelMotor>().invertMotor = useSameMotorSymmetry ? invertMotor : !invertMotor;
             }
             else if (HighLogic.LoadedSceneIsFlight)
             {
@@ -260,11 +271,15 @@ namespace KSPWheel
             }
             if (HighLogic.LoadedSceneIsEditor && part.isClone && part.symmetryCounterparts != null && part.symmetryCounterparts.Count > 0)
             {
-                if (invertMirror)
+                if (useSameMotorSymmetry)
+                {
+                    invertMotor = part.symmetryCounterparts[0].GetComponent<KSPWheelMotor>().invertMotor;
+                }
+                else if (invertMirror)
                 {
                     invertMotor = !part.symmetryCounterparts[0].GetComponent<KSPWheelMotor>().invertMotor;
                 }
-                else
+                if (!invertMirror)
                 {
                     invertSteering = !part.symmetryCounterparts[0].GetComponent<KSPWheelMotor>().invertSteering;
                 }
@@ -503,9 +518,10 @@ namespace KSPWheel
 
         protected float wheelRPMIntegration(float rpm, float wm, float torque, float deltaTime)
         {
+            // rpm is motor RPM; apply wheel torque to wheel RPM before converting back.
             float wheelRPM = rpm / gearRatio;
-            float wWheel = rpm * rpmToRad;
-            float wAccel = torque / wm * deltaTime;
+            float wWheel = wheelRPM * rpmToRad;
+            float wAccel = torque * gearRatio / wm * deltaTime;
             wWheel += wAccel;
             return wWheel * radToRPM * gearRatio;
         }

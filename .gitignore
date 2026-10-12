@@ -243,3 +243,6 @@ ModelManifest.xml
 # FAKE - F# Make
 .fake/
 /VSProject/KSPWheel/PartModules/KSPWheelVisualClearance.cs
+IncrementVersion.ps1
+kspwheelbuild.bat
+kspwheelcopy.bat

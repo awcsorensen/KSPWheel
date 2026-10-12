@@ -10,23 +10,38 @@ namespace KSPWheel
     {
         #region REGION - Standard Part Config File Fields
         [KSPField]
-        public string bogeyName = "bogey";
+        public string bogeyName = string.Empty;
 
         [KSPField]
         public Vector3 bogeyRotAxis = Vector3.left;
 
+        /// <summary>
+        /// Default config set bogey droop angle. Positive values only inversion of droop angle handled by invertRotation boolean 
+        /// (works better with rotated/mirrored landing gear than negative values) checks are in place to remove sign if config set incorrectly
+        /// </summary>
         [KSPField]
-        public float restingRotation = 0f; // Default config set bogey droop angle
-                                           // positive values only inversion of droop angle handled by invertRotation boolean (works better with rotated/mirrored landing gear than negative values)
-                                           // checks are in place to remove sign if config set incorrectly
+        public float restingRotation = 0f;
+
+        /// <summary>
+        /// Max allowed bogey droop angle set in config.
+        /// </summary>
         [KSPField]
-        public float maxBogeyDroopAngle = 45f; // Max allowed droop angle set in config
+        public float maxBogeyDroopAngle = 45f;
 
         [KSPField]
         public float rotationOffset = 0f;
 
+        /// <summary>
+        /// Nominal bogey droop rotation speed in degrees per second.
+        /// </summary>
         [KSPField]
         public float rotationSpeed = 5f;
+
+        /// <summary>
+        /// Maximum probe-driven bogey rotation in degrees per second.
+        /// </summary>
+        [KSPField]
+        public float groundRotationSpeed = 120f;
         #endregion ENDREGION - Standard Part Config File Fields
 
         #region REGION - User GUI
@@ -34,33 +49,57 @@ namespace KSPWheel
         [KSPField]
         public bool userSetBogeyAngle = false; 
 
-        // Toggle user Bogey Settings
+        /// <summary>
+        /// Toggle user adjustable Bogey Settings.
+        /// </summary>
         [KSPField(guiName = "Bogey Settings", guiActive = false, guiActiveEditor = true, isPersistant = true),
         UI_Toggle(affectSymCounterparts = UI_Scene.All, controlEnabled = true, disabledText = "Hidden", enabledText = "Shown", requireFullControl = false, suppressEditorShipModified = true, scene = UI_Scene.All)]
         public bool showBogeySettings = false; // Toggle bogey settings visibility in GUI for user adjustment of bogey resting angle and invert controls
 
-        // User adjustable droop angle
+        /// <summary>
+        /// User adjustable bogey droop angle.
+        /// </summary>
         [KSPField(guiName = "Bogey Droop Angle", guiActive = false, guiActiveEditor = false, isPersistant = true),
         UI_FloatRange(minValue = 0f, maxValue = 45f, stepIncrement = 1f, suppressEditorShipModified = true)]
         public float userBogeyDroopAngle = 0f; // User selected bogey droop angle
 
-        // User inversion of droop angle
+        /// <summary>
+        /// User inversion of bogey droop angle.
+        /// </summary>
         [KSPField(guiName = "Invert Bogey Rotation", guiActive = false, guiActiveEditor = true, isPersistant = true),
         UI_Toggle(enabledText = "Inverted", disabledText = "Normal", suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.None)]
         public bool invertRotation = false; // Toggle for inverting restingRotation, used for mirror symmetry or rotated parts or as user toggle to invert angle
 
         // GUI Visibility controls
-        [KSPField]
-        public bool showGUIBogeySettings = true; // State for GUI BogeySettings, set to false in config to disable user adjustments
-        [KSPField]
-        public bool showGUIUserBogeyDroopAngle = true; // State for GUI UserBogeyDroopAngle
-        [KSPField]
-        public bool showGUIInvertRotation = true; // State for GUI InvertRotation
-        [KSPField]
-        public bool showResetBogey = true; // State for GUI ResetBogeyAngle
 
-        // Runtime bogey angle display for debugging
-        [KSPField(guiActive = true)]
+        /// <summary>
+        /// State for GUI BogeySettings, set to false in config to disable user adjustments.
+        /// </summary>
+        [KSPField]
+        public bool showGUIBogeySettings = true;
+        
+        /// <summary>
+        /// State for GUI UserBogeyDroopAngle.
+        /// </summary>
+        [KSPField]
+        public bool showGUIUserBogeyDroopAngle = true;
+        
+        /// <summary>
+        /// State for GUI InvertRotation.
+        /// </summary>
+        [KSPField]
+        public bool showGUIInvertRotation = true;
+
+        /// <summary>
+        /// State for GUI ResetBogeyAngle.
+        /// </summary>
+        [KSPField]
+        public bool showResetBogey = true;
+
+        /// <summary>
+        /// Runtime bogey angle display for debugging.
+        /// </summary>
+        [KSPField(guiName = "Current Bogey Angle", guiActive = true, guiFormat = "F1")]
         public float angle;
 
         [KSPField(isPersistant = true)]
@@ -74,6 +113,27 @@ namespace KSPWheel
         private Transform bogeyTransform;
         private float defaultDroopAngle;
         private bool defaultInverted;
+        private int lastProbeFrame = -1;
+        internal bool probeControlEnabled;
+
+        internal Transform ProbeTransform { get { return bogeyTransform; } }
+        internal Quaternion ProbeRestRotation { get { return defaultRotation; } }
+
+        internal void MarkProbeContact()
+        {
+            lastProbeFrame = Time.frameCount;
+        }
+
+        internal void FollowGroundNormal()
+        {
+            Vector3 normal = bogeyTransform.InverseTransformDirection(wheel.contactNormal);
+            float correction = getBogeyAngle(normal) + rotationOffset;
+            if (correction >= 180f) { correction -= 360f; }
+            if (correction < -180f) { correction += 360f; }
+            if (groundRotationSpeed > 0f)
+                correction = Mathf.MoveTowards(0f, correction, Time.deltaTime * groundRotationSpeed);
+            bogeyTransform.Rotate(bogeyRotAxis, correction, Space.Self);
+        }
 
         #endregion ENDREGION - Private Working Variables
 
@@ -172,24 +232,18 @@ namespace KSPWheel
             base.preWheelFrameUpdate();
             if (controller.wheelState != KSPWheelState.DEPLOYED)
             {
-                Quaternion dest = defaultRotation;
-
-                bogeyTransform.localRotation = rotationSpeed > 0 ? Quaternion.Lerp(bogeyTransform.localRotation, dest, Time.deltaTime) : dest;
+                bogeyTransform.localRotation = rotationSpeed > 0
+                    ? Quaternion.Lerp(bogeyTransform.localRotation, defaultRotation, Time.deltaTime)
+                    : defaultRotation;
 
                 return;
             }
-            //TODO update bogey orientation
+            // The visual tyre probes own the grounded angle while they are in contact.
+            if ((wheel.isGrounded && probeControlEnabled) ||
+                (lastProbeFrame >= 0 && Time.frameCount - lastProbeFrame <= 1)) { return; }
             if (wheel.isGrounded)
             {
-                Vector3 normal = wheel.contactNormal;//the 'up' direction of the contacted surface
-                normal = bogeyTransform.InverseTransformDirection(normal);//transformed to local coordinates of the bogey
-                angle = getBogeyAngle(normal) + rotationOffset;
-
-                if (angle >= 180) { angle -= 360f; }
-                if (angle < -180) { angle += 360f; }
-                if (rotationSpeed > 0f) { angle = Mathf.Lerp(0, angle, Time.deltaTime * rotationSpeed); }
-
-                bogeyTransform.Rotate(bogeyRotAxis, angle, Space.Self);
+                FollowGroundNormal();
             }
             else
             {
@@ -200,7 +254,7 @@ namespace KSPWheel
 
                 Quaternion dest = defaultRotation * Quaternion.Euler(angle * bogeyRotAxis);
 
-                bogeyTransform.localRotation = rotationSpeed > 0 ? Quaternion.Lerp(bogeyTransform.localRotation, dest, Time.deltaTime) : dest;
+                bogeyTransform.localRotation = rotationSpeed > 0 ? Quaternion.RotateTowards(bogeyTransform.localRotation, dest, Time.deltaTime * rotationSpeed) : dest;
             }
         }
         #endregion ENDREGION - Standard KSP/Unity Overrides

@@ -6,7 +6,7 @@ namespace KSPWheel
 {
     /// <summary>
     /// Raises a gear's visual suspension target when raycasts beneath its probes find nearby geometry.
-    /// The physical wheel collider and suspension are unchanged.
+    /// The physical wheel collider and suspension are unchanged. Place probes as child object of wheel mesh.
     /// </summary>
     public class KSPWheelVisualClearance : PartModule
     {
@@ -67,7 +67,7 @@ namespace KSPWheel
         /// <summary>
         /// Current visual lift in scaled world units.
         /// </summary>
-        [KSPField(guiActive = true, guiName = "Visual lift (m)", guiFormat = "F3")]
+        [KSPField(guiActive = true, guiName = "Visual lift (m)", guiFormat = "F1")]
         public float appliedLift;
 
         /// <summary>
@@ -81,6 +81,7 @@ namespace KSPWheel
         #region REGION - Private Working Variables
 
         private KSPWheelBase controller;
+        private KSPWheelBogey bogey;
         private Transform target;
         private Transform[] probes;
         private readonly List<ConstraintData> constraints = new List<ConstraintData>();
@@ -95,6 +96,15 @@ namespace KSPWheel
             if (!HighLogic.LoadedSceneIsFlight) { return; }
 
             controller = part.GetComponents<KSPWheelBase>()[baseModuleIndex];
+            foreach (KSPWheelBogey candidate in part.GetComponents<KSPWheelBogey>())
+            {
+                if (candidate.baseModuleIndex == baseModuleIndex && candidate.wheelIndex == wheelIndex)
+                {
+                    bogey = candidate;
+                    bogey.probeControlEnabled = true;
+                    break;
+                }
+            }
             target = part.transform.FindChildren(targetName)[0];
             Transform visualRoot = part.transform.FindChildren(visualRootName)[0];
 
@@ -135,20 +145,56 @@ namespace KSPWheel
             float cap = maxLift * scale;
             float lift = radius + cap;
             Vector3 up = master.transform.up.normalized;
-            float required = 0f;
+            int worstProbe;
+            float required = MeasureRequiredLift(master, up, lift, radius, out worstProbe);
 
-            foreach (Transform probe in probes)
+            // Let the lowest tyre act like a second, visual wheel contact.
+            // Rotate only if doing so reduces the greatest tyre penetration.
+            if (bogey != null && worstProbe >= 0 && required > 0.01f * scale &&
+                bogey.groundRotationSpeed > 0f && bogey.ProbeTransform != null &&
+                probes[worstProbe].IsChildOf(bogey.ProbeTransform))
             {
-                // A point ray approximates the ground directly below each visual tyre.
-                RaycastHit hit;
-                if (Physics.Raycast(probe.position + up * lift, -up, out hit,
-                    lift + radius, master.raycastMask, QueryTriggerInteraction.Ignore))
+                Transform pivot = bogey.ProbeTransform;
+                bogey.MarkProbeContact();
+                Vector3 axis = pivot.TransformDirection(bogey.bogeyRotAxis.normalized);
+                float risePerDegree = Vector3.Dot(up,
+                    Vector3.Cross(axis, probes[worstProbe].position - pivot.position)) * Mathf.Deg2Rad;
+                if (Mathf.Abs(risePerDegree) > 0.00001f)
                 {
-                    required = Mathf.Max(required, radius + lift - hit.distance);
+                    float degrees = Mathf.Clamp(required / risePerDegree,
+                        -bogey.groundRotationSpeed * Time.deltaTime,
+                        bogey.groundRotationSpeed * Time.deltaTime);
+                    Quaternion before = pivot.localRotation;
+                    pivot.Rotate(bogey.bogeyRotAxis, degrees, Space.Self);
+                    if (Quaternion.Angle(bogey.ProbeRestRotation, pivot.localRotation) <= bogey.maxBogeyDroopAngle)
+                    {
+                        ApplyConstraints();
+                        float after = MeasureRequiredLift(master, up, lift, radius, out worstProbe);
+                        if (after < required - 0.0005f * scale)
+                        {
+                            required = after;
+                        }
+                        else
+                        {
+                            pivot.localRotation = before;
+                            ApplyConstraints();
+                        }
+                    }
+                    else
+                    {
+                        pivot.localRotation = before;
+                    }
                 }
             }
+            else if (bogey != null && master.isGrounded && bogey.groundRotationSpeed > 0f)
+            {
+                // With no tyre penetration, retain the original ground-normal leveling.
+                bogey.FollowGroundNormal();
+                ApplyConstraints();
+                required = MeasureRequiredLift(master, up, lift, radius, out worstProbe);
+            }
 
-            limitReached |= required > cap;
+            limitReached = required > cap;
             appliedLift = Mathf.Clamp(required, 0f, cap);
             if (appliedLift <= 0f) { return; }
 
@@ -175,6 +221,28 @@ namespace KSPWheel
             {
                 constraint.updateConstraint();
             }
+        }
+
+        private float MeasureRequiredLift(KSPWheelCollider master, Vector3 up,
+            float lift, float radius, out int worstProbe)
+        {
+            float required = 0f;
+            worstProbe = -1;
+            for (int i = 0; i < probes.Length; ++i)
+            {
+                RaycastHit hit;
+                if (Physics.Raycast(probes[i].position + up * lift, -up, out hit,
+                    lift + radius, master.raycastMask, QueryTriggerInteraction.Ignore))
+                {
+                    float penetration = radius + lift - hit.distance;
+                    if (penetration > required)
+                    {
+                        required = penetration;
+                        worstProbe = i;
+                    }
+                }
+            }
+            return required;
         }
 
         #endregion ENDREGION - Custom Update Methods

@@ -609,6 +609,8 @@ namespace KSPWheel
                 {
                     //TODO loop through ship construct parts list...
                 }
+                MonoBehaviour.print("KSPWheel wheelGroupUpdate: group " + wheelGroup + " updating " + subModules.Count + " modules");
+
                 int len2 = subModules.Count;
                 for (int i = 0; i < len2; i++)
                 {

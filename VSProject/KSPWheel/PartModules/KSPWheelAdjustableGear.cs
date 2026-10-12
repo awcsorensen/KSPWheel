@@ -54,6 +54,11 @@ namespace KSPWheel
         [KSPField]
         public string retractedEffect = "RetractedEffect";
 
+        /// <summary>
+        /// Toggles state to allow the user to 'flip' about mirror line. This actually rotates the whole "Wheel Container" target object 180deg about vertical axis. 
+        /// ALGs have constraints to link the visual meshes to this targets children. On non-sideMode ALG this will invert the angle of the main strut as well as the wheel angle.
+        /// Typically disabled on sideMode due to only impacting the wheel angle, no real advantage to the user that cannot be solved via manual angle adjustment.
+        /// </summary>
         [KSPField]
         public bool allowFlip = false;
 
@@ -62,6 +67,39 @@ namespace KSPWheel
         /// </summary>
         [KSPField]
         public bool sideMode = false;
+
+        /// <summary>
+        /// Changes the original behaviour of ALG to have "Strut Extension" act upon an extension sleeve object rather than simply extending the suspension strut out of the main strut.
+        /// Requires models to have an additional parent part to the "Suspension" mesh object and an empty parent target axis to "WheelContainer" to handle the transform.
+        /// All quaternion orientations remain the same as unmodified ALG for the children of these new objects. 
+        /// Example of this model hierarchy for modders can be found by importing the .mu model to 3D modelling software.
+        /// </summary>
+        [KSPField]
+        public bool altExtendMode = false;
+
+        [KSPField]
+        public string extendTargetName = string.Empty;
+
+        /// <summary>
+        /// Toggles state to apply changes to suit trailing arm style suspension i.e. SU-27/30/34 etc front landing gear. 
+        /// Uses the position data for "linkageTargetName", "trailingArmName", "wheelMeshName" to calculate dynamic visual suspension ratio based on the "suspensionTravel" value defined within KSPWheelBase module.
+        /// Simple rotation transform proportional to physical wheel travel to give an approximation to IRL movement, extreme values will break this... modders please use best judgement for realistic movement.
+        /// </summary>
+        [KSPField]
+        public bool trailingArmMode = false;
+
+        /// <summary>
+        /// Front linkage attachment marker on the trailing arm (point c). Must be a child of "trailing arm" object. This supplies position information only, the linkage movement itself uses part CFG constraints.
+        /// </summary>
+        [KSPField]
+        public string linkageTargetName = string.Empty;
+
+        /// <summary>
+        /// Arm origin is its centre pivot. This object is used to rotation to the "trailing arm" object and is a the (point b) reference used to calculate visual suspension travel for "trailingArmMode" enabled parts.
+        /// The arm must be a child of the visual suspension target so its pivot inherits the reduced strut travel.
+        /// </summary>
+        [KSPField]
+        public string trailingArmName = string.Empty;
 
         /// <summary>
         /// User-selectable strut-extension.  Makes the entire gear 'longer'.
@@ -82,26 +120,32 @@ namespace KSPWheel
         public float maxStrutAngle = 30f;
 
         /// <summary>
-        /// User-selectable maximum wheel angle.  Minimum = 0
+        /// User-selectable minimum wheel angle.
         /// </summary>
         [KSPField]
         public float minWheelAngle = -60f;
 
         /// <summary>
-        /// User-selectable maximum wheel angle.  Minimum = 0
+        /// User-selectable maximum wheel angle.
         /// </summary>
         [KSPField]
         public float maxWheelAngle = 60f;
 
+        /// <summary>
+        /// Config set door opening angle to prevent wheel clipping with smooth animation. Originally 90deg. 
+        /// </summary>
         [KSPField]
-        public float maxSteeringAngle = 25f;
+        public float doorAngle = 110f;
 
-        [KSPField]
-        public float doorAngle = 110f; //config set door opening angle to prevent wheel clipping with smooth animation.
-
+        /// <summary>
+        /// Default retracted angle of wheel bogey.
+        /// </summary>
         [KSPField]
         public float wheelBogeyRetractedAngle = 0f;
 
+        /// <summary>
+        /// Default retracted secondary angle of main strut. Used to rotate wheel about suspension axis.
+        /// </summary>
         [KSPField]
         public float secStrutRetractedAngle = 90f;
 
@@ -150,19 +194,24 @@ namespace KSPWheel
         #endregion ENDREGION - Standard Part Config File Fields
 
         #region REGION - User GUI
-
+        /// <summary>
+        /// State for if default transform values have been stored yet.
+        /// </summary>
         [KSPField(isPersistant = true)]
         public bool userValuesInitialised = false;
 
+        /// <summary>
+        /// Toggle for user set Advanced Controls, set to false to disallow user adjustment advanced settings.
+        /// </summary>
         [KSPField]
-        public bool userAdvancedAdjustments = false; //toggle for user set Advanced Controls, set to false to disallow user adjustment advanced settings.
+        public bool userAdvancedAdjustments = false; 
 
         /// <summary>
         /// User-selectable toggle for in-game retraction angle adjustment (set to true for housing-less landing gear models)
         /// </summary>
         [KSPField(guiName = "Advanced Settings", guiActive = false, guiActiveEditor = true, isPersistant = true),
         UI_Toggle(affectSymCounterparts = UI_Scene.All, controlEnabled = true, disabledText = "Hidden", enabledText = "Shown", requireFullControl = false, suppressEditorShipModified = true, scene = UI_Scene.All)]
-        public bool showAdvanced = false; //toggle advanced settings visibility in GUI for user adjustment of retract angle, off axis angle, retain extension in stowage
+        public bool showAdvanced = false; //Toggle advanced settings visibility in GUI for user adjustment of retract angle, off axis angle, retain extension in stowage
 
         /// <summary>
         /// Angular rotation of the main strut during the retract animation;  this is around the horizontal (X) axis, and rotates the main strut upwards into the housing.
@@ -266,6 +315,9 @@ namespace KSPWheel
         private Transform suspensionRotator;
         private Transform wheelContainer;
         private Transform wheelMesh;
+        private Transform extendTarget;
+        private Transform trailingArm;
+        private Transform linkageTarget;
 
         private Transform leftDoor;
         private Transform rightDoor;
@@ -275,6 +327,11 @@ namespace KSPWheel
         private SphereCollider tempCollider;
 
         private float prevDragUpdateState = -1f; //initialize to negative value to force drag cube updating on first update tick
+        
+        /// <summary>
+        /// Visual strut displacement from physical wheel travel and arm geometry.
+        /// </summary>
+        public float visualSuspensionTravel { get; private set; }
 
         /// <summary>
         /// Cached default orientations and locations for the above transforms
@@ -299,6 +356,14 @@ namespace KSPWheel
         private Quaternion rearDoorDefaultRotation;
         [SerializeField]
         private Quaternion rearDoorFlipDefaultRotation;
+        [SerializeField]
+        private bool initializedExtendTargetTransforms;
+        [SerializeField]
+        private Vector3 extendTargetDefaultPosition;
+        [SerializeField]
+        private Quaternion extendTargetDefaultRotation;
+        [SerializeField]
+        private Quaternion trailingArmDefaultRotation;
 
         #endregion ENDREGION - Private Working Variables
 
@@ -404,6 +469,12 @@ namespace KSPWheel
             flipGearState = !flipGearState; //new function for side mode flip
             this.symmetryUpdate(m =>
             {
+                if (m.trailingArmMode)
+                {
+                    KSPWheelMotor motor = Array.Find(m.part.GetComponents<KSPWheelMotor>(),
+                        motorModule => motorModule.baseModuleIndex == m.baseModuleIndex && motorModule.wheelIndex == m.wheelIndex);
+                    if (motor != null) { motor.invertMotor = !motor.invertMotor; }
+                }
                 if (m != this)
                 {
                     m.isFlipped = !this.isFlipped; //preserve existing opposite flipped relationship
@@ -415,6 +486,19 @@ namespace KSPWheel
         [KSPEvent(guiName = "Align Wheel to Ground", guiActive = false, guiActiveEditor = true)]
         public void alignToGround()
         {
+            if (trailingArmMode)
+            {
+                this.symmetryUpdate(m =>
+                {
+                    m.updateAnimation(0f);
+                    Vector3 localUp = m.wheelContainer.InverseTransformDirection(Vector3.up);
+                    float alignmentAngle = -Mathf.Atan2(localUp.x, localUp.y) * Mathf.Rad2Deg;
+                    if (m.isFlipped) { alignmentAngle = -alignmentAngle; }
+                    m.wheelRotation = Mathf.Clamp(m.roundToIncrement(m.wheelRotation + alignmentAngle, 0.1f), m.minWheelAngle, m.maxWheelAngle);
+                    m.updateAnimation(0f);
+                });
+                return;
+            }
             Vector3 target = wheelContainer.position + Vector3.up;//one unit above the transform, in world-space in the editor
             Vector3 localTarget = wheelContainer.InverseTransformPoint(target);//one unit above the transform, as seen in local space
                                                                                //rotating around the local Z axis, so we only care about the x and y offsets
@@ -550,6 +634,9 @@ namespace KSPWheel
         internal override void postWheelCreated()
         {
             base.postWheelCreated();
+            // The ALG container already rotates its children by wheel.steeringAngle.
+            // A collider inside it must not apply the same angle again to its forward direction.
+            wheel.steeringAngleAppliedByTransform = wheel.transform == wheelContainer || wheel.transform.IsChildOf(wheelContainer);
             if (part.symmetryCounterparts != null && part.symmetryCounterparts.Count > 0)
             {
                 //this must be a clone, or part is being reloaded
@@ -568,7 +655,7 @@ namespace KSPWheel
                 KSPWheelSteering steering = part.GetComponent<KSPWheelSteering>();
                 if (steering != null)
                 {
-                    steering.maxSteeringAngle = Mathf.Abs(wheelRotation) < 0.25f ? maxSteeringAngle : 0;
+                    steering.steeringDisabledByAdjustableGear = Mathf.Abs(wheelRotation) >= 0.25f;
                 }
             }
             updateAnimation(0f);//force update the animation based on current time
@@ -590,7 +677,9 @@ namespace KSPWheel
             }
             else if (controller.wheelState == KSPWheelState.DEPLOYED)
             {
-                wheelMesh.Rotate(wheel.perFrameRotation, 0, 0, Space.Self);
+                float wheelSpin = wheel.perFrameRotation;
+                if (trailingArmMode && Vector3.Dot(wheelMesh.right, wheel.transform.right) < 0f) { wheelSpin = -wheelSpin; }
+                wheelMesh.Rotate(wheelSpin, 0, 0, Space.Self);
                 part.Effect(deployEffect, 0f);
                 part.Effect(retractEffect, 0f);
             }
@@ -643,6 +732,17 @@ namespace KSPWheel
             wheelContainer = part.transform.FindRecursive(wheelContainerName);
             wheelMesh = part.transform.FindRecursive(wheelMeshName);
 
+            if (altExtendMode)
+            {
+                extendTarget = part.transform.FindRecursive(extendTargetName);
+            }
+
+            if (trailingArmMode)
+            {
+                trailingArm = part.transform.FindRecursive(trailingArmName);
+                linkageTarget = part.transform.FindRecursive(linkageTargetName);
+            }
+
             //locate doors
             leftDoor = part.transform.FindRecursive(leftDoorName);
             rightDoor = part.transform.FindRecursive(rightDoorName);
@@ -662,6 +762,20 @@ namespace KSPWheel
                 rightDoorDefaultRotation = rightDoor.localRotation;
                 rearDoorDefaultRotation = rearDoor.localRotation;
                 rearDoorFlipDefaultRotation = rearDoorFlip.localRotation;
+            }
+
+            if ((altExtendMode || trailingArmMode) && !initializedExtendTargetTransforms)
+            {
+                initializedExtendTargetTransforms = true;
+                if (altExtendMode)
+                {
+                    extendTargetDefaultPosition = extendTarget.localPosition;
+                    extendTargetDefaultRotation = extendTarget.localRotation;
+                }
+                if (trailingArmMode)
+                {
+                    trailingArmDefaultRotation = trailingArm.localRotation;
+                }
             }
         }
 
@@ -809,6 +923,7 @@ namespace KSPWheel
                 offAxisRot = -offAxisRot; //toe direction mirrors for both standard and sidemode
                 secStrutRot = -secStrutRot;
                 bogeyAngleRot = -bogeyAngleRot;
+                if (trailingArmMode) { wheelAngleRot = -wheelAngleRot; }
             }
             if (isFlipped && !sideMode)
             {
@@ -829,13 +944,34 @@ namespace KSPWheel
 
             suspensionContainer1.localRotation = sc1DefaultRotation;//user strut angle setting
             suspensionContainer1.Rotate(0, 0, offAxisRot, Space.Self);//user off axis retract strut angle setting
-            wheelContainer.localRotation = wheelContainerDefaultRotation;//user wheel angle setting
+            if (altExtendMode)
+            {
+                extendTarget.localPosition = extendTargetDefaultPosition;
+                extendTarget.localRotation = extendTargetDefaultRotation * wheelContainerDefaultRotation;
+                wheelContainer.localRotation = Quaternion.identity;
+            }
+            else
+            {
+                wheelContainer.localRotation = wheelContainerDefaultRotation;//user wheel angle setting
+            }
             wheelContainer.localPosition = wheelContainerDefaultPosition;//user strut extension setting
             float extensionAnimationPosition = lockExtension && userAdvancedAdjustments ? 1f : susTargetPos;//extension behaviour: unlocked = extension follows normal animation, locked = user selected extension remains fully applied
-            wheelContainer.transform.position -= wheelContainer.up * controller.scale * strutExtension * maxExtension * extensionAnimationPosition;//apply user selected strut extension
+            if (altExtendMode)
+            {
+                extendTarget.position -= extendTarget.up * controller.scale * strutExtension * maxExtension * extensionAnimationPosition;
+            }
+            else
+            {
+                wheelContainer.position -= wheelContainer.up * controller.scale * strutExtension * maxExtension * extensionAnimationPosition;
+            }
             suspensionContainer1.Rotate(strutAngleRot, 0, 0, Space.Self);//user strut angle setting
+            if (altExtendMode)
+            {
+                extendTarget.RotateAround(suspensionContainer1.position, sideMode ? suspensionContainer1.right : suspensionContainer1.up, mainStrutRot);
+            }
 
             bool flipWheelHousing = (!sideMode && isFlipped) || (sideMode && flipGearState);
+            if (trailingArmMode) { flipWheelHousing = sideMode ? isFlipped : flipGearState; }
             if (flipWheelHousing)
             {
                 wheelContainer.Rotate(0, 180, 0, Space.Self);
@@ -844,11 +980,28 @@ namespace KSPWheel
             //change sequence of rotation tranforms to stop inversion of targets
             wheelContainer.Rotate(0, secStrutRot + wheel.steeringAngle, 0, Space.Self);
             wheelContainer.Rotate(0, 0, wheelAngleRot, Space.Self);
-            Vector3 p2 = wheelContainer.position - wheelContainer.up * (HighLogic.LoadedSceneIsFlight ? (wheel.length - wheel.compressionDistance) : (wheel.length * (1 - compTest)));
-            suspensionTarget.position = Vector3.Lerp(wheelContainer.position, p2, susTargetPos);
+            float wheelSuspensionTravel = HighLogic.LoadedSceneIsFlight ? (wheel.length - wheel.compressionDistance) : (wheel.length * (1 - compTest));
+            Vector3 suspensionBasePosition = wheelContainer.position;
+            Vector3 visualTravelDirection = altExtendMode ? -extendTarget.up : -wheelContainer.up;
+
+            Vector3 p2 = suspensionBasePosition + visualTravelDirection * wheelSuspensionTravel;
+            suspensionTarget.position = trailingArmMode ? suspensionBasePosition : Vector3.Lerp(suspensionBasePosition, p2, susTargetPos);
             suspensionTarget.rotation = wheelContainer.rotation;
-            suspensionTarget.RotateAround(suspensionContainer1.position, sideMode ? suspensionContainer1.right : suspensionContainer1.up, mainStrutRot);
+            if (!altExtendMode)
+            {
+                suspensionTarget.RotateAround(suspensionContainer1.position, sideMode ? suspensionContainer1.right : suspensionContainer1.up, mainStrutRot);
+            }
             suspensionTarget.Rotate(-bogeyAngleRot, 0, 0, Space.Self);
+
+            if (trailingArmMode)
+            {
+                updateTrailingArmVisual(wheelSuspensionTravel * susTargetPos, visualTravelDirection);
+            }
+            else
+            {
+                visualSuspensionTravel = wheelSuspensionTravel * susTargetPos;
+            }
+
             suspensionRotator.rotation = suspensionTarget.rotation;
             suspensionRotator.Rotate(bogeyAngleRot, 0, 0, Space.Self);
             suspensionRotator.LookAtLocked(suspensionContainer1.position, Vector3.up, Vector3.forward);
@@ -865,6 +1018,29 @@ namespace KSPWheel
             float p = pEnd - pStart;
             float t = time - pStart;
             return p <= 0 ? 0 : t / p;
+        }
+
+        /// <summary>
+        /// S is actual wheel travel; a is the wheel mesh origin, b is the trailing arm pivot, and c is linkageTarget, y is the vertical movement of the suspension strut (visual pivot). 
+        /// The visual pivot travels: y = S * (c-b) / (a-c). The remaining wheel travel comes from a single rotation of the trailing arm about its local X axis.
+        /// </summary>
+        private void updateTrailingArmVisual(float requestedWheelTravel, Vector3 travelDirection)
+        {
+            trailingArm.localRotation = trailingArmDefaultRotation;
+
+            Vector3 armAxis = trailingArm.right;
+            Vector3 pivot = trailingArm.position;
+            Vector3 wheelVector = Vector3.ProjectOnPlane(wheelMesh.position - pivot, armAxis);
+            Vector3 frontVector = Vector3.ProjectOnPlane(linkageTarget.position - pivot, armAxis);
+            float frontLength = frontVector.magnitude;                      // (c-b)
+            float armLength = (wheelVector - frontVector).magnitude;        // (a-c)
+
+            visualSuspensionTravel = requestedWheelTravel * frontLength / armLength;
+            float angle = Mathf.Asin(Mathf.Clamp(visualSuspensionTravel / frontLength, -1f, 1f)) * Mathf.Rad2Deg;
+            float angleDirection = Mathf.Sign(-Vector3.Dot(Vector3.Cross(armAxis, frontVector), travelDirection));
+
+            suspensionTarget.position += travelDirection * visualSuspensionTravel;
+            trailingArm.Rotate(angleDirection * angle, 0f, 0f, Space.Self);
         }
 
         private float getStagedRetractRotation(float animationTime, float retractAngle, float transitionAngle, float transitionTime, bool needs90DegreeStage, float animationStart, float animationEnd)

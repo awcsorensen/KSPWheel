@@ -3,7 +3,7 @@
 //currently only supported options are MS-DOS Command-Line options (CMD:) and Zip operations (ZIP:{})
 versionFile = GameData/KSPWheel/KSPWheel.version
 //simply zip it up and export it to the parent directory
-ZIP:KSPWheel-%version%.zip
+ZIP:KSPWheel-dev-%version%.zip
 {
     +d GameData/KSPWheel:GameData/KSPWheel
 	//TODO -- add source dirs for other plugins?

@@ -265,6 +265,11 @@ namespace KSPWheel
         }
 
         /// <summary>
+        /// True when a parent transform already applies steeringAngle to this wheel's forward direction.
+        /// </summary>
+        public bool steeringAngleAppliedByTransform { get; set; }
+
+        /// <summary>
         /// Get/Set the gravity vector that should be used during calculations.  MUST be updated every frame that gravity differs from the previous frame or undesired and inconsistent functioning will result.
         /// </summary>
         public Vector3 gravityVector
@@ -518,12 +523,21 @@ namespace KSPWheel
         }
 
         /// <summary>
-        /// Returns the -ray- hit position of the current compression value.
-        /// Will return incorrect results if wheel is not grounded (returns uncompressed position), or if used with sphere/capsule sweeps (returns the position as if it was a raycast used)
+        /// Returns the world-space contact point from the last suspension sweep.
+        /// Only valid while isGrounded is true.
+        /// </summary>
+        public Vector3 contactPoint
+        {
+            get { return hitPoint; }
+        }
+
+        /// <summary>
+        /// Returns the last world-space contact point for existing callers.
+        /// Only valid while isGrounded is true.
         /// </summary>
         public Vector3 worldHitPos
         {
-            get { return wheel.transform.position - wheel.transform.up * (suspensionLength - currentSuspensionCompression + wheelRadius); }
+            get { return hitPoint; }
         }
 
         #endregion ENDREGION - Public accessible methods, API get/set methods
@@ -550,7 +564,9 @@ namespace KSPWheel
                 return;
             }
             if (this.wheel == null) { this.wheel = this.gameObject; }
-            wheelForward = Quaternion.AngleAxis(currentSteeringAngle, wheel.transform.up) * wheel.transform.forward;
+            wheelForward = steeringAngleAppliedByTransform
+                ? wheel.transform.forward
+                : Quaternion.AngleAxis(currentSteeringAngle, wheel.transform.up) * wheel.transform.forward;
             wheelUp = wheel.transform.up;
             wheelRight = -Vector3.Cross(wheelForward, wheelUp);
             prevSuspensionCompression = currentSuspensionCompression;
@@ -770,13 +786,24 @@ namespace KSPWheel
         /// <returns></returns>
         private bool suspensionSweepRaycast()
         {
+            const float minGroundDot = 0.5f;
+            float rayLength = suspensionLength + wheelRadius / minGroundDot;
             RaycastHit hit;
-            if (Physics.Raycast(wheel.transform.position, -wheel.transform.up, out hit, suspensionLength + wheelRadius, currentRaycastMask, QueryTriggerInteraction.Ignore))
+            // Cast far enough to reach a sphere-shaped tyre on slopes up to 60 degrees.
+            if (Physics.Raycast(wheel.transform.position, -wheelUp, out hit, rayLength, currentRaycastMask, QueryTriggerInteraction.Ignore))
             {
-                currentSuspensionCompression = suspensionLength + wheelRadius - hit.distance;
+                float alignment = Vector3.Dot(hit.normal, wheelUp);
+                if (alignment < minGroundDot) { return false; }
+
+                // Place the tyre centre one radius from the ground plane.
+                float compression = suspensionLength + wheelRadius / alignment - hit.distance;
+                if (compression < 0f) { return false; }
+
+                currentSuspensionCompression = compression;
                 hitNormal = hit.normal;
                 hitCollider = hit.collider;
-                hitPoint = hit.point;
+                Vector3 centre = wheel.transform.position - wheelUp * (suspensionLength - compression);
+                hitPoint = centre - hitNormal * wheelRadius;
                 grounded = true;
                 return true;
             }
