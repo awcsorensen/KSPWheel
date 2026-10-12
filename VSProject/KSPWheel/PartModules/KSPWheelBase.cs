@@ -70,26 +70,20 @@ namespace KSPWheel
 
         [KSPField(guiName = "Show Wheel Controls", guiActive = true, guiActiveEditor = true, isPersistant = true),
          UI_Toggle(affectSymCounterparts = UI_Scene.All, controlEnabled = true, disabledText = "Hidden", enabledText = "Shown", requireFullControl = false, suppressEditorShipModified = true, scene = UI_Scene.All)]
-        public bool showControls = true;
-
-        [KSPField]
-        public float minLoadRating = 0.05f;
-
-        [KSPField]
-        public float maxLoadRating = 5f;
+        public bool showControls = false; 
 
         [KSPField(guiName = "Spring Rating", guiActive = true, guiActiveEditor = true, isPersistant = true),
-         UI_FloatRange(minValue = 0.2f, maxValue = 0.8f, stepIncrement = 0.05f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
+         UI_FloatRange(minValue = 0.2f, maxValue = 2f, stepIncrement = 0.05f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float springRating = 0.5f;
 
         [KSPField]
         public float minSpringRating = 0.2f;
 
         [KSPField]
-        public float maxSpringRating = 0.8f;
+        public float maxSpringRating = 2f;
 
         [KSPField(guiName = "Damp Ratio", guiActive = true, guiActiveEditor = true, isPersistant = true),
-        UI_FloatRange(minValue = 0.35f, maxValue = 1, stepIncrement = 0.025f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
+        UI_FloatRange(minValue = 0.35f, maxValue = 1f, stepIncrement = 0.025f, suppressEditorShipModified = true, affectSymCounterparts = UI_Scene.Editor)]
         public float dampRatio = 0.65f;
 
         [KSPField(guiName = "Wheel Group", guiActive = true, guiActiveEditor = true, isPersistant = true),
@@ -99,11 +93,11 @@ namespace KSPWheel
         [KSPField]
         public float minDampRatio = 0.25f;
 
+        /// <summary>
+        /// Damp ratios above 1 with high spring rate causes issues with bouncing.
+        /// </summary>
         [KSPField]
         public float maxDampRatio = 1f;
-
-        [KSPField]
-        public float maxSpeed = 0f;
 
         [KSPField]
         public string boundsColliderName = String.Empty;
@@ -115,6 +109,9 @@ namespace KSPWheel
         public bool allowScaling = true;
 
         [KSPField]
+        public bool allowWidthScaling = true;
+
+        [KSPField]
         public float minScale = 0.1f;
 
         [KSPField]
@@ -123,6 +120,10 @@ namespace KSPWheel
         [KSPField(guiName = "Scale", guiActive = false, guiActiveEditor = true, isPersistant = true, guiUnits = "x"),
          UI_FloatEdit(suppressEditorShipModified = true, minValue = 0.1f, maxValue = 10f, incrementLarge = 1f, incrementSmall = 0.25f, incrementSlide = 0.01f, sigFigs = 2)]
         public float scale = 1f;
+
+        [KSPField(guiName = "Width", guiActive = false, guiActiveEditor = true, isPersistant = true, guiUnits = "x"),
+        UI_FloatEdit(suppressEditorShipModified = true, minValue = 0.1f, maxValue = 10f, incrementLarge = 1f, incrementSmall = 0.25f, incrementSlide = 0.01f, sigFigs = 2)]
+        public float width = 1f;
 
         [KSPField]
         public string scalingTransform = string.Empty;
@@ -248,6 +249,7 @@ namespace KSPWheel
         //serialize in editor/etc, should fix cloned-parts starting with improperly offset nodes
         [SerializeField]
         private float prevScale = 1f;
+        private float prevWidth = 1f;
 
         private bool initializedWheels = false;
 
@@ -293,23 +295,47 @@ namespace KSPWheel
             Fields[nameof(wheelGroup)].guiActive = Fields[nameof(wheelGroup)].guiActiveEditor = showControls && showGUIWheelGroup;
             Fields[nameof(antiRoll)].guiActive = Fields[nameof(antiRoll)].guiActiveEditor = showControls && showGUIAntiRoll;
             Fields[nameof(scale)].guiActiveEditor = showControls && allowScaling && showGUIScale;
+            Fields[nameof(width)].guiActiveEditor = showControls && allowWidthScaling && showGUIScale;
+        }        
+        
+        public void onShowControlsUpdated(BaseField field, object obj)
+        {
+            onShowUIUpdated(field, obj);
+
+            this.symmetryUpdate(m =>
+            {
+                if (m != this)
+                {
+                    m.showControls = this.showControls;
+                    m.onShowUIUpdated(field, obj);
+                }
+            });
         }
 
         private void onScaleAdjusted(BaseField field, System.Object obj)
         {
-            setScale(scale, true);
+            setScale(scale, width, true);
             foreach (Part p in part.symmetryCounterparts)
             {
-                p.GetComponent<KSPWheelBase>().setScale(scale, true);
+                p.GetComponent<KSPWheelBase>().setScale(scale, width, true);
+            }
+        }
+        private void onWidthAdjusted(BaseField field, System.Object obj)
+        {
+            setScale(scale, width, true);
+            foreach (Part p in part.symmetryCounterparts)
+            {
+                p.GetComponent<KSPWheelBase>().setScale(scale, width, true);
             }
         }
 
-        private void setScale(float newScale, bool userInput)
+        private void setScale(float newScale, float newWidth, bool userInput)
         {
             scale = newScale;
+            width = newWidth;
             if (allowScaling)
             {
-                Vector3 scale = new Vector3(newScale, newScale, newScale);
+                Vector3 scale = new Vector3(newScale * newWidth, newScale, newScale);
                 Transform modelRoot = part.transform.FindRecursive("model");
                 if (!string.IsNullOrEmpty(scalingTransform))
                 {
@@ -333,6 +359,7 @@ namespace KSPWheel
                 scale = newScale = 1f;
             }
             prevScale = newScale;
+
             onScaleUpdated();
         }
 
@@ -348,6 +375,10 @@ namespace KSPWheel
                 configNodeData = node.ToString();
             }
             currentWheelState = (KSPWheelState)Enum.Parse(typeof(KSPWheelState), persistentState);
+            if (!HighLogic.LoadedSceneIsEditor && !HighLogic.LoadedSceneIsFlight)
+            {
+                initializeController();
+            }
         }
 
         public override void OnSave(ConfigNode node)
@@ -375,39 +406,11 @@ namespace KSPWheel
         {
             base.OnStart(state);
             currentWheelState = (KSPWheelState)Enum.Parse(typeof(KSPWheelState), persistentState);
-
-            ConfigNode node = ConfigNode.Parse(configNodeData).nodes[0];
-
-            List<KSPWheelData> wheelDatas = new List<KSPWheelData>();
-            if (!string.IsNullOrEmpty(wheelColliderName))
+            if (HighLogic.LoadedSceneIsEditor || HighLogic.LoadedSceneIsFlight)
             {
-                ConfigNode newWheelNode = new ConfigNode("WHEEL");
-                newWheelNode.AddValue("radius", wheelRadius);
-                newWheelNode.AddValue("width", wheelWidth > 0 ? wheelWidth : wheelRadius * 0.2f);
-                newWheelNode.AddValue("mass", wheelMass);
-                newWheelNode.AddValue("travel", suspensionTravel);
-                newWheelNode.AddValue("colliderName", wheelColliderName);
-                newWheelNode.AddValue("offset", wheelColliderOffset);
-                wheelDatas.Add(new KSPWheelData(newWheelNode));
+                initializeController();
             }
 
-            ConfigNode[] wheelnodes = node.GetNodes("WHEEL");
-            foreach (ConfigNode wn in wheelnodes)
-            {
-                wheelDatas.Add(new KSPWheelData(wn));
-            }
-            wheelData = wheelDatas.ToArray();
-
-            if (maxSpeed <= 0)
-            {
-                int len = wheelData.Length;
-                float maxRad = 0f;
-                for (int i = 0; i < len; i++)
-                {
-                    if (wheelData[i].wheelRadius > maxRad) { maxRad = wheelData[i].wheelRadius; }
-                }
-                maxSpeed = maxRad * 400f * Mathf.PI * 2 * 0.01666666f;
-            }
 
             BaseField field = Fields[nameof(dampRatio)];
             field.uiControlEditor.onFieldChanged = field.uiControlFlight.onFieldChanged = onLoadUpdated;
@@ -440,7 +443,7 @@ namespace KSPWheel
             }
 
             field = Fields[nameof(showControls)];
-            field.uiControlEditor.onFieldChanged = field.uiControlFlight.onFieldChanged = onShowUIUpdated;
+            field.uiControlEditor.onFieldChanged = field.uiControlFlight.onFieldChanged = onShowControlsUpdated;
 
             Fields[nameof(springRating)].uiControlFlight.onFieldChanged = onLoadUpdated;
 
@@ -449,6 +452,12 @@ namespace KSPWheel
             UI_FloatEdit ufe = (UI_FloatEdit)Fields[nameof(scale)].uiControlEditor;
             ufe.minValue = minScale;
             ufe.maxValue = maxScale;
+
+            Fields[nameof(width)].uiControlEditor.onFieldChanged = onWidthAdjusted;
+            Fields[nameof(width)].guiActiveEditor = allowScaling;
+            UI_FloatEdit ufe2 = (UI_FloatEdit)Fields[nameof(width)].uiControlEditor;
+            ufe2.minValue = minScale;
+            ufe2.maxValue = maxScale;
 
             bool frictionControlEnabled = HighLogic.CurrentGame.Parameters.CustomParams<KSPWheelSettings>().enableFrictionControl;
             Callback<BaseField, System.Object> frictionAction = delegate (BaseField a, System.Object b)
@@ -466,43 +475,6 @@ namespace KSPWheel
             };
             Fields[nameof(frictionControl)].guiActive = Fields[nameof(frictionControl)].guiActiveEditor = frictionControlEnabled;
             Fields[nameof(frictionControl)].uiControlEditor.onFieldChanged = Fields[nameof(frictionControl)].uiControlFlight.onFieldChanged = frictionAction;
-
-            //destroy stock collision enhancer collider
-            if (HighLogic.LoadedSceneIsFlight)
-            {
-                Collider[] colliders = part.GetComponentsInChildren<Collider>();
-                int len = colliders.Length;
-                for (int i = 0; i < len; i++)
-                {
-                    if (colliders[i].gameObject.name.ToLower() == "collisionenhancer")
-                    {
-                        GameObject.DestroyImmediate(colliders[i].gameObject);
-                    }
-                }
-            }
-
-            //destroy bounds collider, if specified and present (KF wheels)
-            if (!string.IsNullOrEmpty(boundsColliderName))
-            {
-                Transform[] boundsColliders = part.transform.FindChildren(boundsColliderName);
-                int len = boundsColliders.Length;
-                for (int i = 0; i < len; i++)
-                {
-                    GameObject.DestroyImmediate(boundsColliders[i].gameObject);
-                }
-            }
-
-            if (part.collider == null)
-            {
-                Utils.setPartColliderField(part);
-            }
-            initializeScaling();
-
-            if (customCollisionMaterial == null)
-            {
-                customCollisionMaterial = new PhysicMaterial("SlideMaterial");
-                customCollisionMaterial.frictionCombine = PhysicMaterialCombine.Multiply;
-            }
         }
 
         public void Start()
@@ -738,7 +710,7 @@ namespace KSPWheel
 
         public string GetPrimaryField()
         {
-            return "Max Load: "+maxLoadRating;
+            return wheelType;
         }
 
         public Callback<Rect> GetDrawModulePanelCallback()
@@ -748,8 +720,10 @@ namespace KSPWheel
 
         public override string GetInfo()
         {
-            String val = "Max Speed: " + maxSpeed + "\n";
-            val = val + "Max Load : " + maxLoadRating;
+            MonoBehaviour.print("KSPWheelBase GetInfo().  Submodules: " + subModules?.Count);
+            string val = string.Empty;
+            //String val = "Max Speed: " + maxSpeed + "\n";
+            //val = val + "Max Load : " + maxLoadRating;
             string moduleInfo = "";
             if (subModules != null)
             {
@@ -763,7 +737,104 @@ namespace KSPWheel
                     }
                 }
             }
+            if (allowScaling)
+            {
+                val = val + "\n" + "Part scale can be adjusted in the editor.";
+            }
             return val;
+        }
+
+        #endregion
+
+        #region REGION - Custom Internal Methods
+
+        internal void initializeController()
+        {
+            ConfigNode node = ConfigNode.Parse(configNodeData).nodes[0];
+
+            List<KSPWheelData> wheelDatas = new List<KSPWheelData>();
+            if (!string.IsNullOrEmpty(wheelColliderName))
+            {
+                ConfigNode newWheelNode = new ConfigNode("WHEEL");
+                newWheelNode.AddValue("radius", wheelRadius);
+                newWheelNode.AddValue("width", wheelWidth > 0 ? wheelWidth : wheelRadius * 0.2f);
+                newWheelNode.AddValue("mass", wheelMass);
+                newWheelNode.AddValue("travel", suspensionTravel);
+                newWheelNode.AddValue("colliderName", wheelColliderName);
+                newWheelNode.AddValue("offset", wheelColliderOffset);
+                wheelDatas.Add(new KSPWheelData(newWheelNode));
+            }
+
+            ConfigNode[] wheelnodes = node.GetNodes("WHEEL");
+            foreach (ConfigNode wn in wheelnodes)
+            {
+                wheelDatas.Add(new KSPWheelData(wn));
+            }
+            wheelData = wheelDatas.ToArray();
+
+            //destroy stock collision enhancer collider
+            if (HighLogic.LoadedSceneIsFlight)
+            {
+                Collider[] colliders = part.GetComponentsInChildren<Collider>();
+                int len = colliders.Length;
+                for (int i = 0; i < len; i++)
+                {
+                    if (colliders[i].gameObject.name.ToLower() == "collisionenhancer")
+                    {
+                        GameObject.DestroyImmediate(colliders[i].gameObject);
+                    }
+                }
+            }
+
+            //destroy bounds collider, if specified and present (KF wheels)
+            if (!string.IsNullOrEmpty(boundsColliderName))
+            {
+                Transform[] boundsColliders = part.transform.FindChildren(boundsColliderName);
+                int len = boundsColliders.Length;
+                for (int i = 0; i < len; i++)
+                {
+                    GameObject.DestroyImmediate(boundsColliders[i].gameObject);
+                }
+            }
+
+            if (part.collider == null)
+            {
+                Utils.setPartColliderField(part);
+            }
+            initializeScaling();
+
+            if (customCollisionMaterial == null)
+            {
+                customCollisionMaterial = new PhysicMaterial("SlideMaterial");
+                customCollisionMaterial.frictionCombine = PhysicMaterialCombine.Multiply;
+            }
+        }
+
+        internal float GetDefaultMaxSpeed(float rpm)
+        {
+            if (wheelData == null) { return 0; }
+            int len = wheelData.Length;
+            float maxRad = 0f;
+            for (int i = 0; i < len; i++)
+            {
+                if (wheelData[i].wheelRadius > maxRad) { maxRad = wheelData[i].wheelRadius; }
+            }
+            return maxRad * rpm * Mathf.PI * 2 * 0.01666666f;
+        }
+
+        internal float GetScaledMaxSpeed(float maxSpeed)
+        {
+            return maxSpeed * wheelMaxSpeedScalingFactor;
+        }
+
+        internal float GetScaledMaxLoad(float maxLoad)
+        {
+            return maxLoad * wheelMaxLoadScalingFactor;
+        }
+
+        internal float GetScaledMotorTorque(float maxTorque)
+        {
+            return maxTorque * motorTorqueScalingFactor;
         }
 
         #endregion
@@ -774,7 +845,7 @@ namespace KSPWheel
         {
             if (initializedScaling) { return; }
             initializedScaling = true;
-            setScale(scale, false);
+            setScale(scale, width, false);
         }
 
         private void updateSuspension()
@@ -900,14 +971,15 @@ namespace KSPWheel
             {
                 KSPWheelScaleSettings scales = HighLogic.CurrentGame.Parameters.CustomParams<KSPWheelScaleSettings>();
                 float localScale = scale * part.rescaleFactor;
-                partMassScaleFactor = Mathf.Pow(localScale, scales.partMassScalingPower);
-                partCostScaleFactor = Mathf.Pow(localScale, scales.partCostScalingPower);
-                wheelMassScaleFactor = Mathf.Pow(localScale, scales.wheelMassScalingPower);
-                wheelMaxLoadScalingFactor = Mathf.Pow(localScale, scales.wheelMaxLoadScalingPower);
+                float localWidth = width;
+                partMassScaleFactor = Mathf.Pow(localScale, scales.partMassScalingPower) * localWidth;
+                partCostScaleFactor = Mathf.Pow(localScale, scales.partCostScalingPower) * localWidth;
+                wheelMassScaleFactor = Mathf.Pow(localScale, scales.wheelMassScalingPower) * localWidth;
+                wheelMaxLoadScalingFactor = Mathf.Pow(localScale, scales.wheelMaxLoadScalingPower) * localWidth;
                 wheelMaxSpeedScalingFactor = Mathf.Pow(localScale, scales.wheelMaxSpeedScalingPower);
                 motorMaxRPMScalingFactor = Mathf.Pow(localScale, scales.motorMaxRPMScalingPower);
-                motorPowerScalingFactor = Mathf.Pow(localScale, scales.motorPowerScalingPower);
-                motorTorqueScalingFactor = Mathf.Pow(localScale, scales.motorTorqueScalingPower);
+                motorPowerScalingFactor = Mathf.Pow(localScale, scales.motorPowerScalingPower) * localWidth;
+                motorTorqueScalingFactor = Mathf.Pow(localScale, scales.motorTorqueScalingPower) * localWidth;
             }
             if (wheelData != null)
             {

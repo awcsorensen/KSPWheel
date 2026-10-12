@@ -18,7 +18,7 @@
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;dev</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <Prefer32Bit>false</Prefer32Bit>
@@ -92,6 +92,7 @@
     <Compile Include="PartModules\KFAPUController.cs" />
     <Compile Include="PartModules\KSPWheelAdjustableDeployment.cs" />
     <Compile Include="PartModules\KSPWheelAdjustableGear.cs" />
+    <Compile Include="PartModules\KSPWheelAnchorGuard.cs" />
     <Compile Include="PartModules\KSPWheelAnimation.cs" />
     <Compile Include="PartModules\KSPWheelAnimationRemoval.cs" />
     <Compile Include="PartModules\KSPWheelBase.cs" />
@@ -121,6 +122,7 @@
     <Compile Include="PartModules\KSPWheelTracks.cs" />
     <Compile Include="PartModules\KSPWheelTransformRemoval.cs" />
     <Compile Include="PartModules\KSPWheelTreadDirection.cs" />
+    <Compile Include="PartModules\KSPWheelVisualClearance.cs" />
     <Compile Include="PartModules\KSPWheelWaterPropulsion.cs" />
     <Compile Include="PartModules\Utils.cs" />
     <Compile Include="PartModules\WheelAnimationHandler.cs" />
@@ -137,6 +139,9 @@
     <PostBuildEvent>copy "$(TargetPath)" "$(SolutionDir)\..\GameData\KSPWheel\Plugin\$(TargetFileName)"
 
 copy "$(ProjectDir)Component\*.*" "$(SolutionDir)\..\UnityProject\Assets\Scripts\*.*"
+
+echo POST-BUILD EVENT IS RUNNING
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\Andrew\Documents\GitHub\KSPWheel-dev\IncrementVersion.ps1"
 
 </PostBuildEvent>
   </PropertyGroup>

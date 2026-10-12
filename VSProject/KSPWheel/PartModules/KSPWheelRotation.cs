@@ -13,6 +13,12 @@ namespace KSPWheel
         [KSPField]
         public string wheelMeshName;
 
+        /// <summary>
+        /// KSPWheelRotation will add its own rotation to the wheel mesh on top of another module such as KSPWheelMotor, useful in the editor but causes RPM doubling in flight.
+        /// </summary>
+        [KSPField]
+        public bool applyVisualRotation = true;
+
         [KSPField]
         public Vector3 rotationAxis = Vector3.left;
 
@@ -43,9 +49,11 @@ namespace KSPWheel
                 wheelMeshTransform.Rotate(rotationAxis * 72 * Time.deltaTime * invert, Space.Self);//72 deg/sec rotation speed
             }
             if (wheel == null) { return; }
-            wheelMeshTransform.Rotate(rotationAxis * wheel.perFrameRotation, Space.Self);
+
+            if (applyVisualRotation)
+            {
+                wheelMeshTransform.Rotate(rotationAxis * wheel.perFrameRotation, Space.Self);
+            }
         }
-
     }
-
 }
