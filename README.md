@@ -1,4 +1,4 @@
-# KSPWheel _0.17.0.0_
+# KSPWheel _0.17.1.46_
 ## An update and feature enrichment of the original _**KSPWheel**_ plugin by _shadowmage45_
 
 ### Original KSPWheel can be found here including original feature list: https://github.com/shadowmage45/KSPWheel
@@ -19,7 +19,9 @@ Mods using KSPWheelAdjustableGear and KSPWheelBogey will benefit from the new fe
 
 All new elements except the KSPWheelAdjustableGear smooth animation module are disabled by default and _**must be enabled**_ in the part config to use.
 
-## Additional Fork Features:
+## _See 0.17.1.46 release for extended patch notes._
+
+### Additional Fork Features:
 * Expanded capabilities for user adjustment under the KSPWheelAdjustableGear and KSPWheelBogey modules.
 
 - **KSPWheelAdjustableGear:**
